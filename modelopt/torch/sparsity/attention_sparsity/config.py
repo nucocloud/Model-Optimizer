@@ -559,10 +559,7 @@ class VSAConfig(SparseAttentionConfig):
 
 
 # Pre-defined VSA Configuration for video diffusion models.
-# Pattern "*attn*" matches all LTX-2 attention module names:
-#   - Video self-attention:  attn1, attn2
-#   - Audio self-attention:  audio_attn1, audio_attn2
-#   - Cross-modal attention: audio_to_video_attn, video_to_audio_attn
+# Pattern "*attn*" matches attention module names by convention.
 VSA_DEFAULT = {
     "sparse_cfg": {
         "*attn*": {
