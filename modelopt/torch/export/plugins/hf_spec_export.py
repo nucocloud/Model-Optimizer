@@ -113,11 +113,17 @@ class EagleExporter(SpeculativeDecodingExporter):
             "llama": LLAMA_EAGLE_SINGLE_LAYER,
             "kimik2": KIMIK2_EAGLE_SINGLE_LAYER,
         }[self.eagle_decoder_type]
+        # fc and hidden_norm are only present when use_aux_hidden_state=True
+        use_aux = getattr(self.model.eagle_config, "use_aux_hidden_state", False)
+        aux_only_keys = {"fc", "layers.0.hidden_norm"}
+        required_keys = set(expected_keys_single_layer["required"])
+        if not use_aux:
+            required_keys -= aux_only_keys
         # Check that export sd has required keys
-        for key in expected_keys_single_layer["required"]:
+        for key in required_keys:
             assert f"{key}.weight" in export_sd, f"Missing required key: {key}.weight"
         for i in range(1, self.num_hidden_layers):
-            for key in expected_keys_single_layer["required"] - {
+            for key in required_keys - {
                 "layers.0.hidden_norm",
                 "layers.0.input_layernorm",
                 "norm",
