@@ -29,9 +29,9 @@ TINY_EAGLE_CFG = {
     "num_hidden_layers": 1,
     "intermediate_size": 32,
     "num_attention_heads": 16,
-    "num_key_value_heads": 2,
+    "num_key_value_heads": 16,
     "head_dim": 2,
-    "use_last_layernorm": False,
+    "use_last_layernorm": True,
     "use_aux_hidden_state": False,
     "eagle_aux_hidden_state_layer_ids": [],
 }
