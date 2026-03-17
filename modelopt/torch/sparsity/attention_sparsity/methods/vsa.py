@@ -85,9 +85,6 @@ class VSA(SparseAttentionMethod):
         # Video shape (can be set dynamically)
         self.video_shape = config.get("video_shape", None)
 
-        # Track last computed statistics
-        self._last_stats: dict = {}
-
         # Metadata cache: avoids recomputing tile indices on every forward pass.
         # Matches FastVideo's @lru_cache on utility functions.
         self._cached_metadata: dict[str, Any] | None = None
@@ -119,12 +116,12 @@ class VSA(SparseAttentionMethod):
             raise ValueError(
                 f"video_shape must be provided for VSA but is None (seq_len={seq_len}). "
                 f"Set it via the VSA config ('video_shape' key), call set_video_shape(), "
-                f"or use a model-specific plugin (e.g., LTX-2 plugin) that computes it "
-                f"from the model's patchifier."
+                f"or use a model-specific plugin that computes it from the model's "
+                f"patchifier."
             )
 
         # Return cached metadata if inputs haven't changed
-        cache_key = (seq_len, self.video_shape)
+        cache_key = (seq_len, self.video_shape, device)
         if self._cached_metadata is not None and self._cached_metadata_key == cache_key:
             return self._cached_metadata
 
@@ -309,15 +306,13 @@ class VSA(SparseAttentionMethod):
         # Compute statistics
         actual_sparsity = 1.0 - (top_k / total_tiles)
         stats = {
-            "sparsity": actual_sparsity,
-            "phase": "vsa_triton",
+            "sparsity": [actual_sparsity],
+            "phase": "prefill",
             "total_blocks": total_tiles,
-            "sparse_blocks": total_tiles - top_k,
+            "sparse_blocks": [total_tiles - top_k],
             "top_k": top_k,
             "video_shape": self.video_shape,
         }
-        self._last_stats = stats
-
         return output, stats
 
     def calculate_sparsity(
@@ -327,7 +322,7 @@ class VSA(SparseAttentionMethod):
         """Not used by VSA. Required stub for the abstract base class.
 
         VSA replaces the entire attention computation via ``forward_attention()``,
-        which is called directly by model-specific plugins (e.g., ``_LTX2SparseAttention``).
+        which is called directly by model-specific plugins.
         The softmax-patching path that calls this method is never reached in the VSA flow.
 
         Raises:

@@ -19,14 +19,21 @@ Tests cover:
 - vsa_utils.py: tile/untile index logic, variable block sizes
 - vsa.py: VSA method init, metadata computation, validation, caching
 - config.py: VSAAttributeConfig validation
+- ModelOpt integration: sparsify() with VSA config, save/restore
 """
 
 import math
 
 import pytest
+
+pytest.importorskip("transformers")
+
 import torch
+from _test_utils.torch.sparsity.sparse_attention_common import SimpleAttentionModel
 from pydantic import ValidationError
 
+import modelopt.torch.opt as mto
+import modelopt.torch.sparsity.attention_sparsity as sparse_attn
 from modelopt.torch.sparsity.attention_sparsity.config import VSAAttributeConfig, VSAConfig
 from modelopt.torch.sparsity.attention_sparsity.methods.vsa import VSA
 from modelopt.torch.sparsity.attention_sparsity.methods.vsa_utils import (
@@ -35,6 +42,7 @@ from modelopt.torch.sparsity.attention_sparsity.methods.vsa_utils import (
     get_reverse_tile_partition_indices,
     get_tile_partition_indices,
 )
+from modelopt.torch.sparsity.attention_sparsity.sparse_attention import SparseAttentionModule
 
 # ---------------------------------------------------------------------------
 # vsa_utils: tile partition indices
@@ -138,6 +146,33 @@ class TestNonPadIndex:
         sizes = torch.tensor([64, 16])
         npi = get_non_pad_index(sizes, 64)
         assert npi.shape == (80,)  # 64 + 16
+
+
+# ---------------------------------------------------------------------------
+# VSA: tile/untile round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestTileUntileRoundTrip:
+    """Test _tile_tensor / _untile_tensor preserve data."""
+
+    @pytest.mark.parametrize(
+        "video_shape",
+        [(8, 8, 8), (5, 6, 7), (4, 4, 4)],
+        ids=["even", "non-divisible", "single-tile"],
+    )
+    def test_round_trip(self, video_shape):
+        """tile then untile recovers the original tensor."""
+        seq_len = video_shape[0] * video_shape[1] * video_shape[2]
+        vsa = VSA({"video_shape": video_shape})
+        meta = vsa._compute_metadata(seq_len, torch.device("cpu"))
+
+        x = torch.randn(2, 4, seq_len, 16)  # [batch, heads, seq, dim]
+        tiled = vsa._tile_tensor(x, meta)
+        recovered = vsa._untile_tensor(tiled, meta, seq_len)
+
+        assert recovered.shape == x.shape
+        assert torch.allclose(recovered, x)
 
 
 # ---------------------------------------------------------------------------
@@ -262,3 +297,106 @@ class TestVSAAttributeConfig:
         cfg = VSAConfig()
         assert "*attn*" in cfg.sparse_cfg
         assert cfg.sparse_cfg["*attn*"]["method"] == "vsa"
+
+
+# ---------------------------------------------------------------------------
+# ModelOpt integration: sparsify() with VSA config
+# ---------------------------------------------------------------------------
+
+VSA_TEST_CFG = {
+    "sparse_cfg": {
+        "*attention*": {
+            "method": "vsa",
+            "block_size_3d": (4, 4, 4),
+            "top_k_ratio": 0.5,
+            "enable": True,
+        },
+        "default": {"enable": False},
+    },
+}
+
+
+class TestVSASparsifyIntegration:
+    """Test VSA integration with modelopt sparsify() API."""
+
+    def test_sparsify_creates_sparse_modules(self):
+        """sparsify() with VSA config replaces attention modules."""
+        model = SimpleAttentionModel()
+        sparse_model = sparse_attn.sparsify(model, VSA_TEST_CFG)
+
+        sparse_modules = [m for m in sparse_model.modules() if isinstance(m, SparseAttentionModule)]
+        assert len(sparse_modules) > 0
+
+    def test_sparse_module_has_vsa_method(self):
+        """Replaced modules are configured with VSA method."""
+        model = SimpleAttentionModel()
+        sparse_model = sparse_attn.sparsify(model, VSA_TEST_CFG)
+
+        for module in sparse_model.modules():
+            if isinstance(module, SparseAttentionModule):
+                assert module._method == "vsa"
+                assert isinstance(module._sparse_method_instance, VSA)
+                assert module._sparse_method_instance.block_size_3d == (4, 4, 4)
+                assert module._sparse_method_instance.top_k_ratio == 0.5
+
+    def test_enable_disable(self):
+        """Enable/disable works on VSA sparse modules."""
+        model = SimpleAttentionModel()
+        sparse_model = sparse_attn.sparsify(model, VSA_TEST_CFG)
+
+        for module in sparse_model.modules():
+            if isinstance(module, SparseAttentionModule):
+                assert module.is_enabled
+                module.disable()
+                assert not module.is_enabled
+                module.enable()
+                assert module.is_enabled
+
+    def test_threshold_info(self):
+        """VSA sparse modules report correct threshold info."""
+        model = SimpleAttentionModel()
+        sparse_model = sparse_attn.sparsify(model, VSA_TEST_CFG)
+
+        for module in sparse_model.modules():
+            if isinstance(module, SparseAttentionModule):
+                info = module.get_threshold_info()
+                assert info["type"] == "vsa"
+                assert info["top_k_ratio"] == 0.5
+
+    def test_save_restore(self):
+        """VSA modelopt_state can be saved and restored."""
+        model = SimpleAttentionModel()
+        sparse_model = sparse_attn.sparsify(model, VSA_TEST_CFG)
+
+        state = mto.modelopt_state(sparse_model)
+
+        # Restore to a fresh model
+        model_restored = SimpleAttentionModel()
+        mto.restore_from_modelopt_state(model_restored, state)
+
+        # Verify VSA method is restored
+        for module in model_restored.modules():
+            if isinstance(module, SparseAttentionModule):
+                assert module._method == "vsa"
+                assert isinstance(module._sparse_method_instance, VSA)
+
+    def test_pattern_matching(self):
+        """Pattern-based config selectively applies VSA."""
+        model = SimpleAttentionModel()
+
+        # Pattern that won't match anything
+        config = {
+            "sparse_cfg": {
+                "*nonexistent*": {
+                    "method": "vsa",
+                    "enable": True,
+                },
+                "default": {"enable": False},
+            },
+        }
+        sparse_model = sparse_attn.sparsify(model, config)
+
+        # No modules should have VSA enabled
+        for module in sparse_model.modules():
+            if isinstance(module, SparseAttentionModule):
+                assert not module.is_enabled

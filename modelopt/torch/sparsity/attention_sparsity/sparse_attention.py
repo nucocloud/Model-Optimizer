@@ -177,9 +177,9 @@ class SparseAttentionModule(DynamicModule):
         """Forward with selected sparse attention method.
 
         Methods that replace the full attention computation (e.g., VSA) override
-        ``forward()`` in their model-specific plugin (e.g., ``_LTX2SparseAttention``)
-        and never reach this path.  This method handles the softmax-patching path
-        used by methods like ``flash_skip_softmax``.
+        ``forward()`` in their model-specific plugin and never reach this path.
+        This method handles the softmax-patching path used by methods like
+        ``flash_skip_softmax``.
         """
         # Pass through if sparse attention is disabled
         if not self.is_enabled:

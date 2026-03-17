@@ -477,9 +477,9 @@ class VSAAttributeConfig(ModeloptBaseConfig):
         title="Video shape.",
         description=(
             "Video dimensions (T, H, W) after patchification.  Required unless a "
-            "model-specific plugin (e.g., the LTX-2 plugin) computes it from the "
-            "model's patchifier.  If None and no plugin provides a value, VSA will "
-            "raise an error at forward time."
+            "model-specific plugin computes it from the model's patchifier.  "
+            "If None and no plugin provides a value, VSA will raise an error at "
+            "forward time."
         ),
     )
 
