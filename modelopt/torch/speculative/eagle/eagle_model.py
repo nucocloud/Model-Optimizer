@@ -39,3 +39,10 @@ class EagleModel(DynamicModule):
         self.eagle_decoder_type = config.eagle_decoder_type
         self.eagle_ttt_steps = config.eagle_ttt_steps
         self.eagle_mix_hidden_states = config.eagle_mix_hidden_states
+        self.eagle_base_lora = config.eagle_base_lora
+        self.eagle_base_lora_rank = config.eagle_base_lora_rank
+        self.eagle_base_lora_alpha = config.eagle_base_lora_alpha
+        self.eagle_base_lora_target_modules = config.eagle_base_lora_target_modules
+        self.eagle_base_lora_preservation_loss_weight = (
+            config.eagle_base_lora_preservation_loss_weight
+        )
