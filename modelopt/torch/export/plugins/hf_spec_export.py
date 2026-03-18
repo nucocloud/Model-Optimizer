@@ -204,7 +204,12 @@ class EagleExporter(SpeculativeDecodingExporter):
             bias="none",
         )
         with open(export_dir / "lora_adapter_config.json", "w") as f:
-            json.dump(lora_config.to_dict(), f, indent=4)
+            json.dump(
+                lora_config.to_dict(),
+                f,
+                indent=4,
+                default=lambda o: sorted(o) if isinstance(o, set) else o,
+            )
 
     def export(self, export_dir: Path | str, dtype: torch.dtype | None = None):
         """Export the model to the deployment format."""
