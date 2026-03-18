@@ -778,7 +778,10 @@ class HFEagleModel(EagleModel):
                 torch.arange(kv_len).view(1, 1, 1, kv_len),
             ).to(self.device)
             tensor_mask = torch.full_like(
-                tensor_mask, 0, dtype=self._base_llm_config.dtype, device=self.device
+                tensor_mask,
+                0,
+                dtype=getattr(self._base_llm_config, "dtype", None) or torch.bfloat16,
+                device=self.device,
             ).masked_fill(~tensor_mask, dtypemin)
 
             # Note: (hg) repeat mask for kimi-k2 compatibility
