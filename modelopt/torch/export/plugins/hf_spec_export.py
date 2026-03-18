@@ -23,7 +23,6 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from peft import LoraConfig
 from safetensors.torch import save_file
 
 from .hf_spec_configs import kimik2_eagle_template_config, llama_eagle_template_config
@@ -194,6 +193,8 @@ class EagleExporter(SpeculativeDecodingExporter):
 
     def _export_lora(self, export_dir: Path, full_sd: dict):
         """Export base model LoRA adapter weights alongside the eagle module artifacts."""
+        from peft import LoraConfig
+
         lora_sd = {k: v for k, v in full_sd.items() if "lora_A" in k or "lora_B" in k}
         save_file(lora_sd, export_dir / "lora_adapter_model.safetensors")
 
