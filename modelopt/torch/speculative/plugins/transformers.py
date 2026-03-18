@@ -762,7 +762,7 @@ class HFEagleModel(EagleModel):
     ) -> BlockMask | torch.Tensor:
         """Return TTT attention_mask tensor of type BlockMask or Tensor depends on eagle attn impl."""
         msk_func = get_ttt_msk_func(seq_length, ttt_step)
-        dtypemin = torch.finfo(getattr(self._base_llm_config, "dtype", None) or torch.bfloat16).min
+        dtypemin = torch.finfo(getattr(self._base_llm_config, "dtype", None) or torch.get_default_dtype()).min
         q_len = seq_length
         kv_len = seq_length * (1 + ttt_step)
         if self.eagle_config._attn_implementation == "flex_attention":
@@ -780,7 +780,7 @@ class HFEagleModel(EagleModel):
             tensor_mask = torch.full_like(
                 tensor_mask,
                 0,
-                dtype=getattr(self._base_llm_config, "dtype", None) or torch.bfloat16,
+                dtype=getattr(self._base_llm_config, "dtype", None) or torch.get_default_dtype(),
                 device=self.device,
             ).masked_fill(~tensor_mask, dtypemin)
 
