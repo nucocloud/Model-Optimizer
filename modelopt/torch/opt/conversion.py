@@ -522,12 +522,65 @@ def load_modelopt_state(modelopt_state_path: str | os.PathLike, **kwargs) -> dic
 
     Returns:
         A modelopt state dictionary describing the modifications to the model.
+
+    Raises:
+        TypeError: If the loaded object is not a dictionary.
+        ValueError: If the loaded dictionary doesn't have the expected schema for a modelopt state file.
     """
     # Security NOTE: weights_only=False is used here on ModelOpt-generated state_dict, not on untrusted user input
     kwargs.setdefault("weights_only", False)
     kwargs.setdefault("map_location", "cpu")
-    # TODO: Add some validation to ensure the file is a valid modelopt state file.
     modelopt_state = torch.load(modelopt_state_path, **kwargs)
+    
+    # Validate that the loaded object is a dictionary
+    if not isinstance(modelopt_state, dict):
+        raise TypeError(
+            f"Expected loaded modelopt state to be a dictionary, "
+            f"but got {type(modelopt_state).__name__}. "
+            f"The file may not be a valid modelopt state file."
+        )
+    
+    # Validate that the dictionary has the expected keys
+    required_keys = {"modelopt_state_dict", "modelopt_version"}
+    missing_keys = required_keys - set(modelopt_state.keys())
+    if missing_keys:
+        raise ValueError(
+            f"The loaded modelopt state is missing required keys: {missing_keys}. "
+            f"Expected keys: {required_keys}. "
+            f"The file may not be a valid modelopt state file."
+        )
+    
+    # Validate that modelopt_state_dict is a list
+    state_dict = modelopt_state["modelopt_state_dict"]
+    if not isinstance(state_dict, list):
+        raise TypeError(
+            f"Expected 'modelopt_state_dict' to be a list, "
+            f"but got {type(state_dict).__name__}. "
+            f"The file may not be a valid modelopt state file."
+        )
+    
+    # Validate that each entry in the state_dict is a tuple with 2 elements
+    for i, entry in enumerate(state_dict):
+        if not isinstance(entry, tuple) or len(entry) != 2:
+            raise ValueError(
+                f"Expected each entry in 'modelopt_state_dict' to be a tuple of length 2, "
+                f"but entry {i} is {type(entry).__name__} with length {len(entry) if isinstance(entry, (tuple, list)) else 'N/A'}. "
+                f"The file may not be a valid modelopt state file."
+            )
+        mode_name, mode_state = entry
+        if not isinstance(mode_name, str):
+            raise TypeError(
+                f"Expected mode name (first element of tuple) to be a string, "
+                f"but got {type(mode_name).__name__} at entry {i}. "
+                f"The file may not be a valid modelopt state file."
+            )
+        if not isinstance(mode_state, dict):
+            raise TypeError(
+                f"Expected mode state (second element of tuple) to be a dictionary, "
+                f"but got {type(mode_state).__name__} at entry {i}. "
+                f"The file may not be a valid modelopt state file."
+            )
+    
     return modelopt_state
 
 
