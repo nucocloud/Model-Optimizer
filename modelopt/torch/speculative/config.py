@@ -129,11 +129,11 @@ class EagleConfig(ModeloptBaseConfig):
         description="LoRA alpha (scaling) for the base model adapters.",
     )
 
-    eagle_base_lora_target_modules: list = ModeloptField(
-        default=[],
+    eagle_base_lora_target_modules: list | None = ModeloptField(
+        default=None,
         description=(
             "List of module name patterns to apply LoRA to in the base model "
-            "(e.g. ['q_proj', 'v_proj']). Empty list uses peft defaults."
+            "(e.g. ['q_proj', 'v_proj']). None uses peft defaults."
         ),
     )
 

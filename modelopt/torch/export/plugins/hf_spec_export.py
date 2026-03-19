@@ -195,7 +195,12 @@ class EagleExporter(SpeculativeDecodingExporter):
         """Export base model LoRA adapter weights alongside the eagle module artifacts."""
         from peft import LoraConfig
 
-        lora_sd = {k: v for k, v in full_sd.items() if "lora_A" in k or "lora_B" in k}
+        lora_sd = {k: v for k, v in full_sd.items() if ".lora_A." in k or ".lora_B." in k}
+        if not lora_sd:
+            raise RuntimeError(
+                "No LoRA adapter tensors found in the model state dict. "
+                "Ensure eagle_base_lora=True and the model was converted with LoRA adapters."
+            )
         save_file(lora_sd, export_dir / "lora_adapter_model.safetensors")
 
         lora_config = LoraConfig(

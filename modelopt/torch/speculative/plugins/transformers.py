@@ -37,9 +37,6 @@ from typing import Any
 import torch
 import transformers
 from packaging.version import Version
-from peft import LoraConfig
-from peft.mapping import inject_adapter_in_model
-from peft.tuners.lora import LoraLayer
 from torch import nn
 from torch.nn import CrossEntropyLoss
 from torch.nn.attention.flex_attention import BlockMask, create_block_mask
@@ -552,6 +549,9 @@ class HFEagleModel(EagleModel):
 
     def _inject_base_lora(self):
         """Inject HF PEFT LoRA adapters into the base model in-place and unfreeze them."""
+        from peft import LoraConfig
+        from peft.mapping import inject_adapter_in_model
+
         target_modules = self.eagle_base_lora_target_modules or None
         lora_config = LoraConfig(
             r=self.eagle_base_lora_rank,
@@ -567,6 +567,8 @@ class HFEagleModel(EagleModel):
 
     def _set_base_lora_enabled(self, enabled: bool) -> None:
         """Enable or disable LoRA adapters in the base model."""
+        from peft.tuners.lora import LoraLayer
+
         for module in self._base_model.modules():
             if isinstance(module, LoraLayer):
                 module.enable_adapters(enabled)
