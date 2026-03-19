@@ -118,10 +118,6 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       MIX_HIDDEN_STATES="${1#*=}"
       ;;
-    --eagle_base_lora*)
-      if [[ "$1" != *=* ]]; then shift; fi
-      EAGLE_BASE_LORA="${1#*=}"
-      ;;
     --eagle_base_lora_rank*)
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_RANK="${1#*=}"
@@ -137,6 +133,10 @@ while [ $# -gt 0 ]; do
     --eagle_base_lora_preservation_loss_weight*)
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT="${1#*=}"
+      ;;
+    --eagle_base_lora*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA="${1#*=}"
       ;;
     *)
       >&2 printf "Error: Invalid argument ${1#*=}\n"
