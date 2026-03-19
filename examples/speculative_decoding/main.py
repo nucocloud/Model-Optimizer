@@ -161,7 +161,7 @@ class EagleArguments:
         },
     )
     eagle_base_lora_preservation_loss_weight: float = field(
-        default=0.1,
+        default=1.0,
         metadata={
             "help": (
                 "Weight for the preservation loss that minimizes KL divergence between the "
