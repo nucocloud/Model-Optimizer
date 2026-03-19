@@ -1008,11 +1008,22 @@ class HFEagleModel(EagleModel):
 
             for i in range(self.eagle_config.parallel_draft_step):
                 eagle_logit = eagle_logits[i]
+                # When LoRA co-training is active, detach base logits used as soft labels so
+                # the EAGLE loss does not backprop into LoRA through the soft-label path.
+                # LoRA still receives EAGLE gradients via the hidden-state path
+                # (out_hiddens -> eagle_input_hiddens) and preservation-loss gradients.
+                # Without this detach, a circular collapse occurs: base chases eagle's predictions
+                # and eagle chases base's, driving both to a degenerate low-entropy solution.
+                base_logits_for_eagle = (
+                    base_outputs.logits.detach()
+                    if self.eagle_base_lora
+                    else base_outputs.logits
+                )
                 classification_loss, acc = self._eagle_loss(
                     # base model predict +1 tok, while eagle predict +2
                     # so we shift base model outputs compared to eagle outputs
                     # additionally, we mask the first n tok of eagle outputs at nth TTT step
-                    base_outputs.logits[:, 1 + i + ttt_step :],
+                    base_logits_for_eagle[:, 1 + i + ttt_step :],
                     eagle_logit[:, ttt_step : -(1 + i)],
                     loss_mask[:, 1 + ttt_step :] if i == 0 else loss_mask[:, 1 + ttt_step : -i],
                 )
