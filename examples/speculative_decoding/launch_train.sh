@@ -118,6 +118,26 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       MIX_HIDDEN_STATES="${1#*=}"
       ;;
+    --eagle_base_lora*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA="${1#*=}"
+      ;;
+    --eagle_base_lora_rank*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_RANK="${1#*=}"
+      ;;
+    --eagle_base_lora_alpha*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_ALPHA="${1#*=}"
+      ;;
+    --eagle_base_lora_target_modules*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_TARGET_MODULES="${1#*=}"
+      ;;
+    --eagle_base_lora_preservation_loss_weight*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT="${1#*=}"
+      ;;
     *)
       >&2 printf "Error: Invalid argument ${1#*=}\n"
       exit 1
@@ -159,6 +179,11 @@ LOG_STEPS=${LOG_STEPS:-100}
 DRAFT_VOCAB_CACHE=${DRAFT_VOCAB_CACHE:-""}
 MIX_HIDDEN_STATES=${MIX_HIDDEN_STATES:-"False"}
 NUM_TTT_STEPS=${NUM_TTT_STEPS:-3}
+EAGLE_BASE_LORA=${EAGLE_BASE_LORA:-"False"}
+EAGLE_BASE_LORA_RANK=${EAGLE_BASE_LORA_RANK:-64}
+EAGLE_BASE_LORA_ALPHA=${EAGLE_BASE_LORA_ALPHA:-16.0}
+EAGLE_BASE_LORA_TARGET_MODULES=${EAGLE_BASE_LORA_TARGET_MODULES:-""}
+EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT=${EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT:-0.1}
 
 
 if [[ "$MODE" == "eagle3" ]]; then
@@ -188,6 +213,18 @@ if [[ "$VLM_PROCESSOR" != "" ]]; then
   VLM_ARGS="--vlm_processor $VLM_PROCESSOR --vlm_img_dir $VLM_IMG_DIR"
 else
   VLM_ARGS=""
+fi
+
+if [[ "$EAGLE_BASE_LORA" == "True" ]]; then
+  LORA_ARGS="--eagle_base_lora True \
+             --eagle_base_lora_rank $EAGLE_BASE_LORA_RANK \
+             --eagle_base_lora_alpha $EAGLE_BASE_LORA_ALPHA \
+             --eagle_base_lora_preservation_loss_weight $EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT"
+  if [[ "$EAGLE_BASE_LORA_TARGET_MODULES" != "" ]]; then
+    LORA_ARGS="$LORA_ARGS --eagle_base_lora_target_modules $EAGLE_BASE_LORA_TARGET_MODULES"
+  fi
+else
+  LORA_ARGS=""
 fi
 
 if [[ "$TOTAL_GPU" -gt 1 ]]; then
@@ -253,6 +290,7 @@ CMD="accelerate launch $MULTI_NODE_ARGS --mixed_precision bf16 ${SCRIPT_DIR}/mai
     --cp_size $CP_SIZE \
     --dp_shard_size $DP_SHARD_SIZE \
     --num_ttt_steps $NUM_TTT_STEPS \
+    $LORA_ARGS \
 "
 
 start_time=$(date +%s)

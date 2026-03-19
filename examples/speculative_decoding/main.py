@@ -134,6 +134,41 @@ class EagleArguments:
         default=3,
         metadata={"help": "Number of train-time-test steps to use during training."},
     )
+    eagle_base_lora: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to add LoRA adapters to the base model for co-training with the EAGLE "
+                "draft module. Requires the `peft` library. Incompatible with offline training."
+            )
+        },
+    )
+    eagle_base_lora_rank: int = field(
+        default=64,
+        metadata={"help": "LoRA rank for the base model adapters."},
+    )
+    eagle_base_lora_alpha: float = field(
+        default=16.0,
+        metadata={"help": "LoRA alpha (scaling) for the base model adapters."},
+    )
+    eagle_base_lora_target_modules: str = field(
+        default=None,
+        metadata={
+            "help": (
+                "Comma-separated list of module name patterns to apply LoRA to in the base model "
+                "(e.g. 'q_proj,v_proj'). Defaults to peft's default target modules."
+            )
+        },
+    )
+    eagle_base_lora_preservation_loss_weight: float = field(
+        default=0.1,
+        metadata={
+            "help": (
+                "Weight for the preservation loss that minimizes KL divergence between the "
+                "LoRA-adapted base model output and the original base model output."
+            )
+        },
+    )
 
 
 def train():
@@ -208,12 +243,22 @@ def train():
                 json.load(open(eagle_args.eagle_config)) if eagle_args.eagle_config else {}
             )
 
+            lora_target_modules = (
+                eagle_args.eagle_base_lora_target_modules.split(",")
+                if eagle_args.eagle_base_lora_target_modules
+                else None
+            )
             config = {
                 "eagle_decoder_type": eagle_args.eagle_decoder_type,
                 "eagle_offline": use_offline_training,
                 "eagle_mix_hidden_states": eagle_args.mix_hidden_states,
                 "eagle_ttt_steps": eagle_args.num_ttt_steps,
                 "eagle_architecture_config": custom_config,
+                "eagle_base_lora": eagle_args.eagle_base_lora,
+                "eagle_base_lora_rank": eagle_args.eagle_base_lora_rank,
+                "eagle_base_lora_alpha": eagle_args.eagle_base_lora_alpha,
+                "eagle_base_lora_target_modules": lora_target_modules,
+                "eagle_base_lora_preservation_loss_weight": eagle_args.eagle_base_lora_preservation_loss_weight,
             }
 
             mtsp.convert(model, [("eagle", config)])
