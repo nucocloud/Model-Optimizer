@@ -86,7 +86,7 @@ def test_eagle_offline_incompatible():
     model = get_tiny_llama(num_hidden_layers=4)
     config = deepcopy(EAGLE_LORA_CONFIG)
     config["eagle_offline"] = True
-    with pytest.raises(AssertionError, match="eagle_base_lora is incompatible with eagle_offline"):
+    with pytest.raises(ValueError, match="eagle_base_lora is incompatible with eagle_offline"):
         mtsp.convert(model, mode=[("eagle", config)])
 
 

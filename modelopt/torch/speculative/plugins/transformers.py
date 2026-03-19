@@ -648,7 +648,8 @@ class HFEagleModel(EagleModel):
 
         # Inject HF PEFT LoRA adapters into the base model for co-training
         if self.eagle_base_lora:
-            assert not self.eagle_offline, "eagle_base_lora is incompatible with eagle_offline=True"
+            if self.eagle_offline:
+                raise ValueError("eagle_base_lora is incompatible with eagle_offline=True")
             self._inject_base_lora()
 
         # delete base model layers for offline training
@@ -818,10 +819,12 @@ class HFEagleModel(EagleModel):
         ref_logits = None
         if self.eagle_base_lora:
             self._set_base_lora_enabled(False)
-            ref_logits = _run_forward(no_grad=True).logits
-            if hasattr(self, "_aux_hidden_states"):
-                self._aux_hidden_states.clear()
-            self._set_base_lora_enabled(True)
+            try:
+                ref_logits = _run_forward(no_grad=True).logits
+            finally:
+                if hasattr(self, "_aux_hidden_states"):
+                    self._aux_hidden_states.clear()
+                self._set_base_lora_enabled(True)
 
         # Main forward — LoRA params receive gradients when eagle_base_lora is True.
         outputs = _run_forward(no_grad=freeze_base_model and not self.eagle_base_lora)
