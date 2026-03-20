@@ -340,6 +340,15 @@ class ModeloptStateManager:
                 f"The file may not be a valid modelopt state file."
             )
 
+        # Validate that modelopt_version is a string
+        version = modelopt_state["modelopt_version"]
+        if not isinstance(version, str):
+            raise TypeError(
+                f"Expected 'modelopt_version' to be a string, "
+                f"but got {type(version).__name__}. "
+                f"The file may not be a valid modelopt state file."
+            )
+
         # Validate that modelopt_state_dict is a list
         state_dict = modelopt_state["modelopt_state_dict"]
         if not isinstance(state_dict, list):
@@ -352,11 +361,19 @@ class ModeloptStateManager:
         # Validate that each entry in the state_dict is a tuple with 2 elements
         for i, entry in enumerate(state_dict):
             if not isinstance(entry, tuple) or len(entry) != 2:
-                raise ValueError(
-                    f"Expected each entry in 'modelopt_state_dict' to be a tuple of length 2, "
-                    f"but entry {i} is {type(entry).__name__} with length {len(entry) if isinstance(entry, (tuple, list)) else 'N/A'}. "
-                    f"The file may not be a valid modelopt state file."
+                entry_type = type(entry).__name__
+                entry_len = (
+                    len(entry)
+                    if isinstance(entry, (tuple, list))
+                    else "N/A"
                 )
+                msg = (
+                    f"Expected each entry in 'modelopt_state_dict' to be "
+                    f"a tuple of length 2, but entry {i} is {entry_type} "
+                    f"with length {entry_len}. The file may not be a "
+                    f"valid modelopt state file."
+                )
+                raise ValueError(msg)
             mode_name, mode_state = entry
             if not isinstance(mode_name, str):
                 raise TypeError(
