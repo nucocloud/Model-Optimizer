@@ -169,6 +169,16 @@ class EagleArguments:
             )
         },
     )
+    eagle_base_lora_lm_loss_weight: float = field(
+        default=1.0,
+        metadata={
+            "help": (
+                "Weight for the LM loss on the LoRA-adapted base model output. "
+                "Provides a direct training signal for LoRA to improve base model LM quality. "
+                "Set to 0 to disable."
+            )
+        },
+    )
     eagle_base_lora_lr_multiplier: float = field(
         default=10.0,
         metadata={
@@ -267,6 +277,7 @@ def train():
                 "eagle_base_lora_alpha": eagle_args.eagle_base_lora_alpha,
                 "eagle_base_lora_target_modules": lora_target_modules,
                 "eagle_base_lora_preservation_loss_weight": eagle_args.eagle_base_lora_preservation_loss_weight,
+                "eagle_base_lora_lm_loss_weight": eagle_args.eagle_base_lora_lm_loss_weight,
             }
 
             mtsp.convert(model, [("eagle", config)])

@@ -833,6 +833,11 @@ class HFEagleModel(EagleModel):
 
         if ref_logits is not None:
             base_model_loss = self._preservation_loss(ref_logits, base_model_logits)
+            if labels is not None and self.eagle_base_lora_lm_loss_weight > 0:
+                lm_loss = CrossEntropyLoss()(
+                    base_model_logits.view(-1, base_model_logits.shape[-1]), labels.view(-1)
+                )
+                base_model_loss = base_model_loss + self.eagle_base_lora_lm_loss_weight * lm_loss
         elif not freeze_base_model and labels is not None:
             loss_fct = CrossEntropyLoss()
             base_model_loss = loss_fct(
