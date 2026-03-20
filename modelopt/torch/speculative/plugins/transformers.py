@@ -1022,7 +1022,11 @@ class HFEagleModel(EagleModel):
                     # base model predict +1 tok, while eagle predict +2
                     # so we shift base model outputs compared to eagle outputs
                     # additionally, we mask the first n tok of eagle outputs at nth TTT step
-                    base_outputs.logits[:, 1 + i + ttt_step :],
+                    # Detach: EAGLE loss must not backprop into LoRA through the logits path.
+                    # The coupled LoRA-EAGLE logits gradient always collapses to a degenerate
+                    # solution regardless of preservation loss weight or B initialization.
+                    # LoRA trains via LM loss + preservation loss; EAGLE via EAGLE loss only.
+                    base_outputs.logits.detach()[:, 1 + i + ttt_step :],
                     eagle_logit[:, ttt_step : -(1 + i)],
                     loss_mask[:, 1 + ttt_step :] if i == 0 else loss_mask[:, 1 + ttt_step : -i],
                 )
