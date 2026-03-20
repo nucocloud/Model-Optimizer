@@ -1,6 +1,13 @@
 NVIDIA Model Optimizer Changelog
 ================================
 
+0.44 (2026-04-xx)
+^^^^^^^^^^^^^^^^^
+
+**New Features**
+
+- Add N:M sparse softmax support to the Triton flash attention kernel (``modelopt.torch.kernels.triton_fa``). For every M consecutive key positions, the top-N attention scores are kept and the rest are set to -inf before softmax.
+
 0.43 (2026-03-xx)
 ^^^^^^^^^^^^^^^^^
 

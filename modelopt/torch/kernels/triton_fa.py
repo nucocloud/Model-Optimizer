@@ -111,6 +111,10 @@ def _apply_sparse_nm_to_qk_tile(
     For every ``SPARSITY_M`` consecutive elements along the N (key) dimension,
     keeps the top ``SPARSITY_N`` values and sets the rest to ``-inf``.
     ``BLOCK_N`` must be divisible by ``SPARSITY_M``.
+
+    For M=4, exactly N values are retained (ties broken by position).
+    For M=8, a threshold-based approach (``tl.sort``) may retain more
+    than N values when ties straddle the threshold boundary.
     """
     tl.static_assert(SPARSITY_M == 4 or SPARSITY_M == 8, "SPARSITY_M must be 4 or 8")  # noqa: PLR1714
     MASK_VAL: tl.constexpr = float("-inf")
@@ -141,7 +145,7 @@ def _apply_sparse_nm_to_qk_tile(
         sorted_vals = tl.sort(reshaped, dim=2)
         KTH_IDX: tl.constexpr = SPARSITY_M - SPARSITY_N  # index of N-th largest in ascending order
 
-        # Extract the threshold value (one extraction vs eight before)
+        # Extract the threshold value at KTH_IDX via masked sum
         # Use 0.0 as fill (not -inf) so sum equals just the KTH element
         cols = tl.arange(0, 8)[None, None, :]
         threshold = tl.sum(tl.where(cols == KTH_IDX, sorted_vals, 0.0), axis=2)
@@ -272,7 +276,7 @@ def _attn_fwd(
         scores = tl.dot(q, k) * qk_scale
         scores = _apply_mask(scores, q_pos, kv_pos, seq_len_q, seq_len_kv, kv_start, IS_CAUSAL)
 
-        # --- Optional 2:4 structured sparsity ---
+        # --- Optional N:M structured sparsity ---
         if SPARSITY_N > 0:
             # Check if this KV tile should be kept dense
             is_sink = kv_start < NUM_SINK_TOKENS
@@ -473,7 +477,7 @@ def _attn_bwd_dq(
         scores = tl.dot(q, kT) * qk_scale
         scores = _apply_mask(scores, q_pos, kv_pos, seq_len_q, seq_len_kv, kv_start, IS_CAUSAL)
 
-        # Re-apply 2:4 sparsity to match forward pass
+        # Re-apply N:M sparsity to match forward pass
         if SPARSITY_N > 0:
             is_sink = kv_start < NUM_SINK_TOKENS
             causal_offset = seq_len_kv - seq_len_q
@@ -613,7 +617,7 @@ def _attn_bwd_dkdv(
             scores = tl.dot(q_tile, kT) * qk_scale
             scores = _apply_mask(scores, q_pos, kv_pos, seq_len_q, seq_len_kv, kv_start, IS_CAUSAL)
 
-            # Re-apply 2:4 sparsity to match forward pass
+            # Re-apply N:M sparsity to match forward pass
             if SPARSITY_N > 0:
                 is_sink = kv_start < NUM_SINK_TOKENS
                 causal_offset = seq_len_kv - seq_len_q
