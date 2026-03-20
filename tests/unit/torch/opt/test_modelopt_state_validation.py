@@ -47,6 +47,16 @@ class TestModeloptStateValidation:
         assert "missing required keys" in str(exc_info.value)
         assert "modelopt_version" in str(exc_info.value)
 
+    def test_validate_modelopt_state_invalid_version_type(self):
+        """Test validation fails when modelopt_version is not a string."""
+        with pytest.raises(TypeError) as exc_info:
+            mto.ModeloptStateManager.validate_modelopt_state({
+                "modelopt_state_dict": [],
+                "modelopt_version": 123,
+            })
+        assert "modelopt_version" in str(exc_info.value)
+        assert "string" in str(exc_info.value)
+
     def test_validate_modelopt_state_invalid_state_dict_type(self):
         """Test validation fails when modelopt_state_dict is not a list."""
         with pytest.raises(TypeError) as exc_info:
