@@ -560,10 +560,15 @@ class HFEagleModel(EagleModel):
             bias="none",
         )
         inject_adapter_in_model(lora_config, self._base_model, adapter_name="default")
-        # Unfreeze only the LoRA parameters
+        # Unfreeze only the LoRA parameters and initialize lora_B with small random values
+        # instead of the default zeros. B=0 creates a saddle point where the preservation
+        # gradient is zero at init, allowing the EAGLE gradient to dominate unopposed.
+        # A small non-zero B ensures preservation loss is active from step 0.
         for name, param in self._base_model.named_parameters():
             if "lora_" in name:
                 param.requires_grad = True
+            if "lora_B" in name:
+                torch.nn.init.normal_(param, std=0.01)
 
     def _set_base_lora_enabled(self, enabled: bool) -> None:
         """Enable or disable LoRA adapters in the base model."""
@@ -1017,10 +1022,7 @@ class HFEagleModel(EagleModel):
                     # base model predict +1 tok, while eagle predict +2
                     # so we shift base model outputs compared to eagle outputs
                     # additionally, we mask the first n tok of eagle outputs at nth TTT step
-                    # Detach so the EAGLE loss treats base logits as fixed soft labels and does
-                    # not backprop into the base model through this path.  LoRA still receives
-                    # EAGLE gradients via the hidden-state path (out_hiddens -> eagle_input_hiddens).
-                    base_outputs.logits.detach()[:, 1 + i + ttt_step :],
+                    base_outputs.logits[:, 1 + i + ttt_step :],
                     eagle_logit[:, ttt_step : -(1 + i)],
                     loss_mask[:, 1 + ttt_step :] if i == 0 else loss_mask[:, 1 + ttt_step : -i],
                 )
