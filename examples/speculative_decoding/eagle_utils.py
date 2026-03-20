@@ -179,9 +179,7 @@ class EagleTrainerWithAccLog(Trainer):
         super().create_optimizer()
         if self.lora_lr_multiplier != 1.0:
             lora_ids = {
-                id(p)
-                for n, p in self.model.named_parameters()
-                if "lora_" in n and p.requires_grad
+                id(p) for n, p in self.model.named_parameters() if "lora_" in n and p.requires_grad
             }
             if lora_ids:
                 new_groups = []
@@ -194,9 +192,7 @@ class EagleTrainerWithAccLog(Trainer):
                             {**group, "params": lora, "lr": group["lr"] * self.lora_lr_multiplier}
                         )
                     elif lora:
-                        new_groups.append(
-                            {**group, "lr": group["lr"] * self.lora_lr_multiplier}
-                        )
+                        new_groups.append({**group, "lr": group["lr"] * self.lora_lr_multiplier})
                     else:
                         new_groups.append(group)
                 self.optimizer.param_groups = new_groups
