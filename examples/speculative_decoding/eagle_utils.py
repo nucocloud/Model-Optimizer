@@ -260,6 +260,7 @@ class EagleTrainingPlot(TrainerCallback):
             return control
         if state.global_step % self.ar_validate_steps == 0 and state.global_step > 0:
             print_rank_0("Running AR validation...")
+            torch.cuda.empty_cache()
             try:
                 ars = validate_ar(
                     model=kwargs["model"],
