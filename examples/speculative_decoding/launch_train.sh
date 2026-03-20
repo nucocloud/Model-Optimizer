@@ -134,6 +134,10 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT="${1#*=}"
       ;;
+    --eagle_base_lora_gradient_scale*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_GRADIENT_SCALE="${1#*=}"
+      ;;
     --eagle_base_lora_lr_multiplier*)
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_LR_MULTIPLIER="${1#*=}"
@@ -188,6 +192,7 @@ EAGLE_BASE_LORA_RANK=${EAGLE_BASE_LORA_RANK:-64}
 EAGLE_BASE_LORA_ALPHA=${EAGLE_BASE_LORA_ALPHA:-16.0}
 EAGLE_BASE_LORA_TARGET_MODULES=${EAGLE_BASE_LORA_TARGET_MODULES:-""}
 EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT=${EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT:-0.1}
+EAGLE_BASE_LORA_GRADIENT_SCALE=${EAGLE_BASE_LORA_GRADIENT_SCALE:-0.01}
 EAGLE_BASE_LORA_LR_MULTIPLIER=${EAGLE_BASE_LORA_LR_MULTIPLIER:-1.0}
 
 
@@ -225,6 +230,7 @@ if [[ "$EAGLE_BASE_LORA" == "True" ]]; then
              --eagle_base_lora_rank $EAGLE_BASE_LORA_RANK \
              --eagle_base_lora_alpha $EAGLE_BASE_LORA_ALPHA \
              --eagle_base_lora_preservation_loss_weight $EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT \
+             --eagle_base_lora_gradient_scale $EAGLE_BASE_LORA_GRADIENT_SCALE \
              --eagle_base_lora_lr_multiplier $EAGLE_BASE_LORA_LR_MULTIPLIER"
   if [[ "$EAGLE_BASE_LORA_TARGET_MODULES" != "" ]]; then
     LORA_ARGS="$LORA_ARGS --eagle_base_lora_target_modules $EAGLE_BASE_LORA_TARGET_MODULES"

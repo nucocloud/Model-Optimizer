@@ -169,6 +169,15 @@ class EagleArguments:
             )
         },
     )
+    eagle_base_lora_gradient_scale: float = field(
+        default=0.01,
+        metadata={
+            "help": (
+                "Fraction of EAGLE loss gradient that leaks through aux hidden states to LoRA. "
+                "Controls trade-off between LoRA signal strength and EAGLE training stability."
+            )
+        },
+    )
     eagle_base_lora_lr_multiplier: float = field(
         default=1.0,
         metadata={
@@ -267,6 +276,7 @@ def train():
                 "eagle_base_lora_alpha": eagle_args.eagle_base_lora_alpha,
                 "eagle_base_lora_target_modules": lora_target_modules,
                 "eagle_base_lora_preservation_loss_weight": eagle_args.eagle_base_lora_preservation_loss_weight,
+                "eagle_base_lora_gradient_scale": eagle_args.eagle_base_lora_gradient_scale,
             }
 
             mtsp.convert(model, [("eagle", config)])

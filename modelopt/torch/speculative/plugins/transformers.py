@@ -512,14 +512,15 @@ class HFEagleModel(EagleModel):
     def _collect_aux_hidden_states_forward_hook(self, module, input, output) -> None:
         """Collect auxiliary hidden states from base model intermediate layers, save them in attribute."""
         raw = output if isinstance(output, torch.Tensor) else output[0]
-        # When LoRA co-training is active, keep the computation graph so that EAGLE loss
-        # can backpropagate through intermediate hidden states to LoRA parameters.
-        # This is the primary gradient path for LoRA: EAGLE loss → fc → aux_hiddens →
-        # (backward through base transformer layers) → LoRA weights.
-        # We still detach base_outputs.logits used as EAGLE targets, so the short logit
-        # path that causes mode collapse remains blocked.
+        # When LoRA co-training is active, let a small fraction of the gradient leak
+        # through aux_hiddens to LoRA parameters. This gives LoRA a directional signal
+        # from EAGLE loss ("change hidden states to help EAGLE predict") without
+        # destabilizing EAGLE training via rapid input changes (the "moving target" problem).
+        # Formula: detached + scale * (live - detached) has gradient scale * d(live)/d(LoRA).
         if self.training and getattr(self, "eagle_base_lora", False):
-            self._aux_hidden_states.append(raw.clone())
+            scale = self.eagle_base_lora_gradient_scale
+            detached = raw.clone().detach()
+            self._aux_hidden_states.append(detached + scale * (raw.clone() - detached))
         else:
             self._aux_hidden_states.append(raw.clone().detach())
 
