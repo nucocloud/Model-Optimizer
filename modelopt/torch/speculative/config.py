@@ -138,7 +138,7 @@ class EagleConfig(ModeloptBaseConfig):
     )
 
     eagle_base_lora_preservation_loss_weight: float = ModeloptField(
-        default=1.0,
+        default=0.1,
         description=(
             "Weight for the preservation loss that minimizes the KL divergence between "
             "the LoRA-adapted base model output and the original base model output."
