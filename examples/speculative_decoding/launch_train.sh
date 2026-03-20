@@ -134,6 +134,10 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT="${1#*=}"
       ;;
+    --eagle_base_lora_lr_multiplier*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_LR_MULTIPLIER="${1#*=}"
+      ;;
     --eagle_base_lora*)
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA="${1#*=}"
@@ -184,6 +188,7 @@ EAGLE_BASE_LORA_RANK=${EAGLE_BASE_LORA_RANK:-64}
 EAGLE_BASE_LORA_ALPHA=${EAGLE_BASE_LORA_ALPHA:-16.0}
 EAGLE_BASE_LORA_TARGET_MODULES=${EAGLE_BASE_LORA_TARGET_MODULES:-""}
 EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT=${EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT:-1.0}
+EAGLE_BASE_LORA_LR_MULTIPLIER=${EAGLE_BASE_LORA_LR_MULTIPLIER:-10.0}
 
 
 if [[ "$MODE" == "eagle3" ]]; then
@@ -219,7 +224,8 @@ if [[ "$EAGLE_BASE_LORA" == "True" ]]; then
   LORA_ARGS="--eagle_base_lora True \
              --eagle_base_lora_rank $EAGLE_BASE_LORA_RANK \
              --eagle_base_lora_alpha $EAGLE_BASE_LORA_ALPHA \
-             --eagle_base_lora_preservation_loss_weight $EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT"
+             --eagle_base_lora_preservation_loss_weight $EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT \
+             --eagle_base_lora_lr_multiplier $EAGLE_BASE_LORA_LR_MULTIPLIER"
   if [[ "$EAGLE_BASE_LORA_TARGET_MODULES" != "" ]]; then
     LORA_ARGS="$LORA_ARGS --eagle_base_lora_target_modules $EAGLE_BASE_LORA_TARGET_MODULES"
   fi

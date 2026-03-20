@@ -170,6 +170,38 @@ def make_eagle_supervised_data_module(
 class EagleTrainerWithAccLog(Trainer):
     """Wrapper around Trainer that logs training accuracy."""
 
+    def __init__(self, *args, lora_lr_multiplier: float = 1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lora_lr_multiplier = lora_lr_multiplier
+
+    def create_optimizer(self):
+        """Override to give LoRA parameters a higher learning rate."""
+        super().create_optimizer()
+        if self.lora_lr_multiplier != 1.0:
+            lora_ids = {
+                id(p)
+                for n, p in self.model.named_parameters()
+                if "lora_" in n and p.requires_grad
+            }
+            if lora_ids:
+                new_groups = []
+                for group in self.optimizer.param_groups:
+                    lora = [p for p in group["params"] if id(p) in lora_ids]
+                    others = [p for p in group["params"] if id(p) not in lora_ids]
+                    if lora and others:
+                        new_groups.append({**group, "params": others})
+                        new_groups.append(
+                            {**group, "params": lora, "lr": group["lr"] * self.lora_lr_multiplier}
+                        )
+                    elif lora:
+                        new_groups.append(
+                            {**group, "lr": group["lr"] * self.lora_lr_multiplier}
+                        )
+                    else:
+                        new_groups.append(group)
+                self.optimizer.param_groups = new_groups
+        return self.optimizer
+
     def compute_loss(self, *args, **kwargs):
         """Override compute_loss to save train accs in trainer state."""
         if not hasattr(self.state, "training_accs"):

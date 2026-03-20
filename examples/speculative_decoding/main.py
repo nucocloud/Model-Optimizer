@@ -169,6 +169,14 @@ class EagleArguments:
             )
         },
     )
+    eagle_base_lora_lr_multiplier: float = field(
+        default=10.0,
+        metadata={
+            "help": (
+                "Learning rate multiplier for LoRA parameters relative to the base learning rate."
+            )
+        },
+    )
 
 
 def train():
@@ -285,6 +293,7 @@ def train():
         processing_class=tokenizer,
         args=training_args,
         callbacks=[EagleTrainingPlot(training_args.ar_validate_steps, training_args.estimate_ar)],
+        lora_lr_multiplier=eagle_args.eagle_base_lora_lr_multiplier,
         **data_module,
     )
 
