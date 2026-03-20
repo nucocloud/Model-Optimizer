@@ -144,12 +144,3 @@ class EagleConfig(ModeloptBaseConfig):
             "the LoRA-adapted base model output and the original base model output."
         ),
     )
-
-    eagle_base_lora_lm_loss_weight: float = ModeloptField(
-        default=1.0,
-        description=(
-            "Weight for the language modeling loss applied to the LoRA-adapted base model output. "
-            "Provides a direct training signal for LoRA to improve base model LM quality, "
-            "while EAGLE co-adapts to the improved base. Set to 0 to disable."
-        ),
-    )

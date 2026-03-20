@@ -511,12 +511,17 @@ class HFEagleModel(EagleModel):
 
     def _collect_aux_hidden_states_forward_hook(self, module, input, output) -> None:
         """Collect auxiliary hidden states from base model intermediate layers, save them in attribute."""
-        hidden_states = (
-            output.clone().detach()
-            if isinstance(output, torch.Tensor)
-            else output[0].clone().detach()
-        )
-        self._aux_hidden_states.append(hidden_states)
+        raw = output if isinstance(output, torch.Tensor) else output[0]
+        # When LoRA co-training is active, keep the computation graph so that EAGLE loss
+        # can backpropagate through intermediate hidden states to LoRA parameters.
+        # This is the primary gradient path for LoRA: EAGLE loss → fc → aux_hiddens →
+        # (backward through base transformer layers) → LoRA weights.
+        # We still detach base_outputs.logits used as EAGLE targets, so the short logit
+        # path that causes mode collapse remains blocked.
+        if self.training and getattr(self, "eagle_base_lora", False):
+            self._aux_hidden_states.append(raw.clone())
+        else:
+            self._aux_hidden_states.append(raw.clone().detach())
 
     def pop_and_gather_aux_hiddens(self):
         """Pop auxiliary hidden states from base model and gather them on the draft model device."""
@@ -838,11 +843,6 @@ class HFEagleModel(EagleModel):
 
         if ref_logits is not None:
             base_model_loss = self._preservation_loss(ref_logits, base_model_logits)
-            if labels is not None and self.eagle_base_lora_lm_loss_weight > 0:
-                lm_loss = CrossEntropyLoss()(
-                    base_model_logits.view(-1, base_model_logits.shape[-1]), labels.view(-1)
-                )
-                base_model_loss = base_model_loss + self.eagle_base_lora_lm_loss_weight * lm_loss
         elif not freeze_base_model and labels is not None:
             loss_fct = CrossEntropyLoss()
             base_model_loss = loss_fct(

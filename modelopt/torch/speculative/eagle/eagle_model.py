@@ -46,4 +46,3 @@ class EagleModel(DynamicModule):
         self.eagle_base_lora_preservation_loss_weight = (
             config.eagle_base_lora_preservation_loss_weight
         )
-        self.eagle_base_lora_lm_loss_weight = config.eagle_base_lora_lm_loss_weight
