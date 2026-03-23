@@ -156,6 +156,96 @@ def _apply_sparse_nm_to_qk_tile(
 
 
 # ---------------------------------------------------------------------------
+# Paged KV cache helpers
+# ---------------------------------------------------------------------------
+@triton.jit
+def _load_paged_k_tile(
+    K_cache,  # [num_blocks, page_size, num_kv_heads, head_dim]
+    Block_table,  # [batch, max_blocks_per_seq]
+    batch_idx,
+    kv_head_idx,
+    kv_start,
+    kv_pos,  # [BLOCK_N] relative positions
+    dim_pos,  # [BLOCK_D]
+    seq_len_kv,
+    stride_kc_block,
+    stride_kc_pos,
+    stride_kc_head,
+    PAGE_SIZE: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    max_blocks_per_seq,
+):
+    """Load K^T tile [BLOCK_D, BLOCK_N] from paged KV cache."""
+    d_mask = dim_pos < HEAD_DIM
+    kv_abs = kv_start + kv_pos  # absolute token positions
+    kv_valid = kv_abs < seq_len_kv
+
+    # Translate token positions → (page_id, offset_in_page)
+    page_local = kv_abs // PAGE_SIZE
+    offset_in_page = kv_abs % PAGE_SIZE
+    page_global = tl.load(
+        Block_table + batch_idx * max_blocks_per_seq + page_local,
+        mask=kv_valid,
+        other=0,
+    )
+
+    # Load K values: K_cache[page_global, offset_in_page, kv_head_idx, dim]
+    # We need K^T layout [BLOCK_D, BLOCK_N] for Q @ K^T matmul
+    k_ptrs = (
+        page_global[None, :] * stride_kc_block
+        + offset_in_page[None, :] * stride_kc_pos
+        + kv_head_idx * stride_kc_head
+        + dim_pos[:, None]
+    )
+    return tl.load(K_cache + k_ptrs, mask=kv_valid[None, :] & d_mask[:, None], other=0.0)
+
+
+@triton.jit
+def _load_paged_v_tile(
+    V_cache,  # [num_blocks, page_size, num_kv_heads, head_dim]
+    Block_table,  # [batch, max_blocks_per_seq]
+    batch_idx,
+    kv_head_idx,
+    kv_start,
+    kv_pos,  # [BLOCK_N] relative positions
+    dim_pos,  # [BLOCK_D]
+    seq_len_kv,
+    stride_vc_block,
+    stride_vc_pos,
+    stride_vc_head,
+    PAGE_SIZE: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    max_blocks_per_seq,
+):
+    """Load V tile [BLOCK_N, BLOCK_D] from paged KV cache."""
+    d_mask = dim_pos < HEAD_DIM
+    kv_abs = kv_start + kv_pos
+    kv_valid = kv_abs < seq_len_kv
+
+    page_local = kv_abs // PAGE_SIZE
+    offset_in_page = kv_abs % PAGE_SIZE
+    page_global = tl.load(
+        Block_table + batch_idx * max_blocks_per_seq + page_local,
+        mask=kv_valid,
+        other=0,
+    )
+
+    # Load V values: V_cache[page_global, offset_in_page, kv_head_idx, dim]
+    # V layout [BLOCK_N, BLOCK_D]
+    v_ptrs = (
+        page_global[:, None] * stride_vc_block
+        + offset_in_page[:, None] * stride_vc_pos
+        + kv_head_idx * stride_vc_head
+        + dim_pos[None, :]
+    )
+    return tl.load(V_cache + v_ptrs, mask=kv_valid[:, None] & d_mask[None, :], other=0.0)
+
+
+# ---------------------------------------------------------------------------
 # Masking helper
 # ---------------------------------------------------------------------------
 @triton.jit
@@ -219,6 +309,18 @@ def _attn_fwd(
     SPARSITY_M: tl.constexpr = 4,  # N:M sparsity — group size (4 or 8)
     NUM_SINK_TOKENS: tl.constexpr = 0,  # First N tokens kept dense (attention sinks)
     DENSE_WINDOW_BLOCKS: tl.constexpr = 1,  # Local blocks near diagonal kept dense
+    IS_PAGED: tl.constexpr = False,  # Whether K/V are in paged cache
+    K_cache=None,  # [num_blocks, page_size, num_kv_heads, head_dim] paged K
+    V_cache=None,  # [num_blocks, page_size, num_kv_heads, head_dim] paged V
+    Block_table=None,  # [batch, max_blocks_per_seq] page table
+    stride_kc_block=0,
+    stride_kc_pos=0,
+    stride_kc_head=0,
+    stride_vc_block=0,
+    stride_vc_pos=0,
+    stride_vc_head=0,
+    PAGE_SIZE: tl.constexpr = 16,
+    max_blocks_per_seq=0,
 ):
     # --- Grid: (batch, num_q_heads, num_q_tiles) ---
     # Example: batch=2, num_q_heads=32, seq_len=256, BLOCK_M=128
@@ -265,12 +367,19 @@ def _attn_fwd(
         kv_start = tl.multiple_of(kv_start, BLOCK_N)  # Compiler hint for alignment
 
         # Load K^T [BLOCK_D, BLOCK_N] (transposed layout for Q @ K^T matmul)
-        k_offs = (kv_offset + kv_start + kv_pos[None, :]) * stride_kbs + dim_pos[:, None]
-        k = tl.load(
-            k_base + k_offs,
-            mask=((kv_start + kv_pos[None, :]) < seq_len_kv) & d_mask[:, None],
-            other=0.0,
-        )
+        if IS_PAGED:
+            k = _load_paged_k_tile(
+                K_cache, Block_table, batch_idx, kv_head_idx, kv_start, kv_pos,
+                dim_pos, seq_len_kv, stride_kc_block, stride_kc_pos, stride_kc_head,
+                PAGE_SIZE, BLOCK_N, BLOCK_D, HEAD_DIM, max_blocks_per_seq,
+            )
+        else:
+            k_offs = (kv_offset + kv_start + kv_pos[None, :]) * stride_kbs + dim_pos[:, None]
+            k = tl.load(
+                k_base + k_offs,
+                mask=((kv_start + kv_pos[None, :]) < seq_len_kv) & d_mask[:, None],
+                other=0.0,
+            )
 
         # scores = Q @ K^T * scale  [BLOCK_M, BLOCK_N]
         scores = tl.dot(q, k) * qk_scale
@@ -303,12 +412,19 @@ def _attn_fwd(
         acc = acc * correction[:, None]
 
         # Load V [BLOCK_N, BLOCK_D] and accumulate: acc += attn_weights @ V
-        v_offs = (kv_offset + kv_start + kv_pos[:, None]) * stride_vbs + dim_pos[None, :]
-        v = tl.load(
-            v_base + v_offs,
-            mask=((kv_start + kv_pos[:, None]) < seq_len_kv) & d_mask[None, :],
-            other=0.0,
-        )
+        if IS_PAGED:
+            v = _load_paged_v_tile(
+                V_cache, Block_table, batch_idx, kv_head_idx, kv_start, kv_pos,
+                dim_pos, seq_len_kv, stride_vc_block, stride_vc_pos, stride_vc_head,
+                PAGE_SIZE, BLOCK_N, BLOCK_D, HEAD_DIM, max_blocks_per_seq,
+            )
+        else:
+            v_offs = (kv_offset + kv_start + kv_pos[:, None]) * stride_vbs + dim_pos[None, :]
+            v = tl.load(
+                v_base + v_offs,
+                mask=((kv_start + kv_pos[:, None]) < seq_len_kv) & d_mask[None, :],
+                other=0.0,
+            )
         acc = tl.dot(p.to(v.dtype), v, acc)
         row_max = m_new
 
@@ -667,6 +783,10 @@ class _Attention(torch.autograd.Function):
         sparsity_m,
         num_sink_tokens,
         dense_window_blocks,
+        k_cache,
+        v_cache,
+        block_table,
+        page_size,
     ):
         HEAD_DIM = q.shape[2]
         num_q_heads = q.shape[1]
@@ -674,12 +794,19 @@ class _Attention(torch.autograd.Function):
         kv_group_num = num_q_heads // num_kv_heads
         batch = b_seq_len.shape[0]
 
+        is_paged = k_cache is not None
+
         # Prefill: Q/K/V are the same packed tensor, reuse Q offsets for K/V.
         # Decode: K/V is a separate KV cache tensor, caller must pass explicit metadata.
         if b_seq_len_k is None:
             b_seq_len_k = b_seq_len
             b_start_loc_k = b_start_loc
             max_input_len_k = max_input_len
+
+        # Paged mode: b_start_loc_k may be None (KV is in paged cache, not contiguous).
+        # Provide a dummy tensor so Triton can compile the tl.load (it won't be used).
+        if b_start_loc_k is None:
+            b_start_loc_k = torch.zeros_like(b_start_loc)
 
         # Pre-multiply scale by log2(e) so the kernel can use exp2()
         # exp(score * sm_scale) = exp2(score * sm_scale * log2(e))
@@ -725,6 +852,18 @@ class _Attention(torch.autograd.Function):
             SPARSITY_M=sparsity_m,
             NUM_SINK_TOKENS=num_sink_tokens,
             DENSE_WINDOW_BLOCKS=dense_window_blocks,
+            IS_PAGED=is_paged,
+            K_cache=k_cache,
+            V_cache=v_cache,
+            Block_table=block_table,
+            stride_kc_block=k_cache.stride(0) if is_paged else 0,
+            stride_kc_pos=k_cache.stride(1) if is_paged else 0,
+            stride_kc_head=k_cache.stride(2) if is_paged else 0,
+            stride_vc_block=v_cache.stride(0) if is_paged else 0,
+            stride_vc_pos=v_cache.stride(1) if is_paged else 0,
+            stride_vc_head=v_cache.stride(2) if is_paged else 0,
+            PAGE_SIZE=page_size,
+            max_blocks_per_seq=block_table.shape[1] if is_paged else 0,
             # BLOCK_M, BLOCK_N, num_warps, num_stages chosen by autotune
         )
 
@@ -848,7 +987,7 @@ class _Attention(torch.autograd.Function):
             num_stages=1,
         )
 
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None
+        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 
 def attention(
@@ -868,8 +1007,12 @@ def attention(
     sparsity_m: int = 4,
     num_sink_tokens: int = 0,
     dense_window_blocks: int = 1,
+    k_cache: torch.Tensor | None = None,
+    v_cache: torch.Tensor | None = None,
+    block_table: torch.Tensor | None = None,
+    page_size: int = 16,
 ) -> torch.Tensor:
-    """Variable-length flash attention with GQA, autograd, and optional N:M sparsity.
+    """Variable-length flash attention with GQA, autograd, optional sparsity, and paged KV.
 
     Args:
         q: [total_q_tokens, num_q_heads, head_dim]
@@ -892,6 +1035,13 @@ def attention(
             are kept dense (attention sinks). Granularity is per-block.
         dense_window_blocks: KV blocks within this distance from the query
             diagonal are kept dense (local attention window).
+        k_cache: Paged K cache [num_blocks, page_size, num_kv_heads, head_dim].
+            When provided, K/V are read from paged cache via block_table
+            instead of from contiguous k/v tensors.
+        v_cache: Paged V cache [num_blocks, page_size, num_kv_heads, head_dim].
+        block_table: Page table [batch, max_blocks_per_seq] mapping sequence
+            block indices to global page IDs.
+        page_size: Number of tokens per page in the KV cache.
 
     Returns:
         Output tensor [total_q_tokens, num_q_heads, head_dim].
@@ -913,6 +1063,10 @@ def attention(
         sparsity_m,
         num_sink_tokens,
         dense_window_blocks,
+        k_cache,
+        v_cache,
+        block_table,
+        page_size,
     )
 
 
