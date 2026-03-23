@@ -190,8 +190,17 @@ class EagleArguments:
         default=10,
         metadata={
             "help": (
-                "Number of steps per LoRA training phase (Phase B) in alternating LoRA co-training. "
-                "During Phase B, EAGLE is frozen and LoRA trains via EAGLE loss + preservation loss."
+                "Number of steps per LoRA-EAGLE phase (Phase B) in alternating LoRA co-training. "
+                "During Phase B, EAGLE is frozen and LoRA trains via EAGLE loss only."
+            )
+        },
+    )
+    eagle_base_lora_phase_c_steps: int = field(
+        default=10,
+        metadata={
+            "help": (
+                "Number of steps per LoRA-preservation phase (Phase C) in alternating LoRA co-training. "
+                "During Phase C, EAGLE is frozen and LoRA trains via preservation loss only."
             )
         },
     )
@@ -314,6 +323,7 @@ def train():
         lora_lr_multiplier=eagle_args.eagle_base_lora_lr_multiplier,
         lora_phase_a_steps=eagle_args.eagle_base_lora_phase_a_steps,
         lora_phase_b_steps=eagle_args.eagle_base_lora_phase_b_steps,
+        lora_phase_c_steps=eagle_args.eagle_base_lora_phase_c_steps,
         **data_module,
     )
 

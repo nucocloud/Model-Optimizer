@@ -176,12 +176,14 @@ class EagleTrainerWithAccLog(Trainer):
         lora_lr_multiplier: float = 1.0,
         lora_phase_a_steps: int = 100,
         lora_phase_b_steps: int = 10,
+        lora_phase_c_steps: int = 10,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.lora_lr_multiplier = lora_lr_multiplier
         self.lora_phase_a_steps = lora_phase_a_steps
         self.lora_phase_b_steps = lora_phase_b_steps
+        self.lora_phase_c_steps = lora_phase_c_steps
         # Check if the model uses LoRA co-training
         self._has_lora = getattr(self.model, "eagle_base_lora", False)
 
@@ -192,15 +194,16 @@ class EagleTrainerWithAccLog(Trainer):
             model = model.module
         return model
 
-    def _set_lora_phase(self, lora_phase: bool):
-        """Toggle between EAGLE phase (A) and LoRA phase (B)."""
+    def _set_training_phase(self, phase: str):
+        """Set training phase: 'eagle', 'lora_eagle', or 'lora_preserve'."""
         inner = self._get_inner_model()
-        inner._lora_phase = lora_phase
+        inner._training_phase = phase
+        lora_trains = phase in ("lora_eagle", "lora_preserve")
         for name, param in inner.named_parameters():
             if "eagle_module" in name:
-                param.requires_grad = not lora_phase
+                param.requires_grad = not lora_trains
             elif "lora_" in name:
-                param.requires_grad = lora_phase
+                param.requires_grad = lora_trains
 
     def create_optimizer(self):
         """Override to give LoRA parameters a higher learning rate."""
@@ -229,10 +232,15 @@ class EagleTrainerWithAccLog(Trainer):
     def training_step(self, *args, **kwargs):
         """Override to toggle alternating LoRA/EAGLE training phases."""
         if self._has_lora:
-            cycle = self.lora_phase_a_steps + self.lora_phase_b_steps
-            step_in_cycle = self.state.global_step % cycle
-            lora_phase = step_in_cycle >= self.lora_phase_a_steps
-            self._set_lora_phase(lora_phase)
+            a, b, c = self.lora_phase_a_steps, self.lora_phase_b_steps, self.lora_phase_c_steps
+            step_in_cycle = self.state.global_step % (a + b + c)
+            if step_in_cycle < a:
+                phase = "eagle"
+            elif step_in_cycle < a + b:
+                phase = "lora_eagle"
+            else:
+                phase = "lora_preserve"
+            self._set_training_phase(phase)
         return super().training_step(*args, **kwargs)
 
     def compute_loss(self, *args, **kwargs):

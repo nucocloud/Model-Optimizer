@@ -142,6 +142,10 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_PHASE_B_STEPS="${1#*=}"
       ;;
+    --eagle_base_lora_phase_c_steps*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      EAGLE_BASE_LORA_PHASE_C_STEPS="${1#*=}"
+      ;;
     --eagle_base_lora_lr_multiplier*)
       if [[ "$1" != *=* ]]; then shift; fi
       EAGLE_BASE_LORA_LR_MULTIPLIER="${1#*=}"
@@ -198,6 +202,7 @@ EAGLE_BASE_LORA_TARGET_MODULES=${EAGLE_BASE_LORA_TARGET_MODULES:-""}
 EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT=${EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT:-0.1}
 EAGLE_BASE_LORA_PHASE_A_STEPS=${EAGLE_BASE_LORA_PHASE_A_STEPS:-100}
 EAGLE_BASE_LORA_PHASE_B_STEPS=${EAGLE_BASE_LORA_PHASE_B_STEPS:-10}
+EAGLE_BASE_LORA_PHASE_C_STEPS=${EAGLE_BASE_LORA_PHASE_C_STEPS:-10}
 EAGLE_BASE_LORA_LR_MULTIPLIER=${EAGLE_BASE_LORA_LR_MULTIPLIER:-1.0}
 
 
@@ -237,6 +242,7 @@ if [[ "$EAGLE_BASE_LORA" == "True" ]]; then
              --eagle_base_lora_preservation_loss_weight $EAGLE_BASE_LORA_PRESERVATION_LOSS_WEIGHT \
              --eagle_base_lora_phase_a_steps $EAGLE_BASE_LORA_PHASE_A_STEPS \
              --eagle_base_lora_phase_b_steps $EAGLE_BASE_LORA_PHASE_B_STEPS \
+             --eagle_base_lora_phase_c_steps $EAGLE_BASE_LORA_PHASE_C_STEPS \
              --eagle_base_lora_lr_multiplier $EAGLE_BASE_LORA_LR_MULTIPLIER"
   if [[ "$EAGLE_BASE_LORA_TARGET_MODULES" != "" ]]; then
     LORA_ARGS="$LORA_ARGS --eagle_base_lora_target_modules $EAGLE_BASE_LORA_TARGET_MODULES"

@@ -512,11 +512,9 @@ class HFEagleModel(EagleModel):
     def _collect_aux_hidden_states_forward_hook(self, module, input, output) -> None:
         """Collect auxiliary hidden states from base model intermediate layers, save them in attribute."""
         raw = output if isinstance(output, torch.Tensor) else output[0]
-        # In LoRA phase (Phase B of alternating training), keep the computation graph
-        # so EAGLE loss backpropagates through hidden states to LoRA.
-        # EAGLE is frozen in Phase B so there is no moving-target instability.
-        # In EAGLE phase (Phase A) or non-LoRA training, detach as usual.
-        if self.training and getattr(self, "_lora_phase", False):
+        # Only keep computation graph in "lora_eagle" phase so EAGLE loss
+        # backpropagates through hidden states to LoRA (EAGLE is frozen).
+        if self.training and getattr(self, "_training_phase", None) == "lora_eagle":
             self._aux_hidden_states.append(raw.clone())
         else:
             self._aux_hidden_states.append(raw.clone().detach())
@@ -656,9 +654,11 @@ class HFEagleModel(EagleModel):
             if self.eagle_offline:
                 raise ValueError("eagle_base_lora is incompatible with eagle_offline=True")
             self._inject_base_lora()
-            # Phase flag for alternating training: False = Phase A (train EAGLE),
-            # True = Phase B (train LoRA). Toggled by the trainer.
-            self._lora_phase = False
+            # Phase flag for alternating training, toggled by the trainer:
+            #   "eagle"         (A): train EAGLE, LoRA frozen
+            #   "lora_eagle"    (B): train LoRA via EAGLE loss, EAGLE frozen
+            #   "lora_preserve" (C): train LoRA via preservation loss, EAGLE frozen
+            self._training_phase = "eagle"
 
         # delete base model layers for offline training
         if self.eagle_offline:
@@ -822,11 +822,14 @@ class HFEagleModel(EagleModel):
                     **kwargs,
                 )
 
-        # In LoRA phase (Phase B), run a reference forward with LoRA disabled
-        # for the preservation loss. Skip in EAGLE phase (Phase A) to save compute.
-        lora_phase = getattr(self, "_lora_phase", False)
+        # Three-phase alternating training:
+        #   "eagle"         (A): train EAGLE, LoRA frozen → no_grad, skip ref forward
+        #   "lora_eagle"    (B): train LoRA via EAGLE loss → with grad, skip ref forward
+        #   "lora_preserve" (C): train LoRA via preservation loss → with grad, run ref forward
+        phase = getattr(self, "_training_phase", None)
+        lora_trains = phase in ("lora_eagle", "lora_preserve")
         ref_logits = None
-        if lora_phase:
+        if phase == "lora_preserve":
             self._set_base_lora_enabled(False)
             try:
                 ref_logits = _run_forward(no_grad=True).logits
@@ -835,9 +838,7 @@ class HFEagleModel(EagleModel):
                     self._aux_hidden_states.clear()
                 self._set_base_lora_enabled(True)
 
-        # In LoRA phase, run with grad so EAGLE loss backprops to LoRA.
-        # In EAGLE phase, LoRA is frozen so no_grad for base model is fine.
-        outputs = _run_forward(no_grad=freeze_base_model and not lora_phase)
+        outputs = _run_forward(no_grad=freeze_base_model and not lora_trains)
         past_key_values = getattr(outputs, "past_key_values", None)
         base_model_logits = outputs.logits
 
@@ -1016,11 +1017,12 @@ class HFEagleModel(EagleModel):
             else:
                 eagle_input_hiddens = eagle_output_hiddens
 
-            # In LoRA phase (Phase B), allow EAGLE loss to backprop through logits
-            # to LoRA. Safe because EAGLE is frozen — no co-adaptation collapse.
-            # In EAGLE phase (Phase A), detach to keep standard stable training.
-            lora_phase = getattr(self, "_lora_phase", False)
-            target_logits = base_outputs.logits if lora_phase else base_outputs.logits.detach()
+            # Only in "lora_eagle" phase: allow EAGLE loss to backprop through
+            # logits to LoRA. EAGLE is frozen so no co-adaptation collapse.
+            phase = getattr(self, "_training_phase", None)
+            target_logits = (
+                base_outputs.logits if phase == "lora_eagle" else base_outputs.logits.detach()
+            )
 
             for i in range(self.eagle_config.parallel_draft_step):
                 eagle_logit = eagle_logits[i]
