@@ -244,13 +244,24 @@ class EagleTrainerWithAccLog(Trainer):
         return super().training_step(*args, **kwargs)
 
     def compute_loss(self, *args, **kwargs):
-        """Override compute_loss to save train accs in trainer state."""
+        """Override compute_loss to save train accs and phase losses in trainer state."""
         if not hasattr(self.state, "training_accs"):
             self.state.training_accs = []
+        if not hasattr(self.state, "phase_losses"):
+            self.state.phase_losses = {"eagle": [], "lora_eagle": [], "preservation": []}
         kwargs.pop("num_items_in_batch", None)
         loss, outputs = super().compute_loss(return_outputs=True, *args, **kwargs)
         if hasattr(outputs, "train_acc"):
             self.state.training_accs.append(outputs.train_acc)
+        # Track per-phase losses
+        for key, attr in [
+            ("eagle", "eagle_phase_loss"),
+            ("lora_eagle", "lora_eagle_phase_loss"),
+            ("preservation", "preservation_phase_loss"),
+        ]:
+            val = getattr(outputs, attr, None)
+            if val is not None:
+                self.state.phase_losses[key].append(val.item())
         return loss
 
 
@@ -295,8 +306,16 @@ class EagleTrainingPlot(TrainerCallback):
             if self.estimate_ar:
                 wandb.log({"estimated_training_ar": est_ar}, step=state.global_step)
 
-        # reset training_accs
+            # Log per-phase losses
+            if hasattr(state, "phase_losses"):
+                for key, vals in state.phase_losses.items():
+                    if vals:
+                        wandb.log({f"{key}_phase_loss": np.mean(vals)}, step=state.global_step)
+
+        # reset training_accs and phase_losses
         state.training_accs = []
+        if hasattr(state, "phase_losses"):
+            state.phase_losses = {"eagle": [], "lora_eagle": [], "preservation": []}
         return control
 
     def on_step_end(self, args, state, control, **kwargs):

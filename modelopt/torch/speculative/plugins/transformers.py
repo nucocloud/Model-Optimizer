@@ -958,13 +958,17 @@ class HFEagleModel(EagleModel):
 
         # In Phase C (lora_preserve), only preservation loss trains LoRA.
         # Skip EAGLE forward entirely to save compute.
-        if getattr(self, "_training_phase", None) == "lora_preserve":
+        phase = getattr(self, "_training_phase", None)
+        if phase == "lora_preserve":
             return ModelOutput(
                 loss=base_outputs.loss,
                 logits=base_outputs.logits,
                 past_key_values=past_key_values,
                 hidden_states=base_outputs.out_hiddens,
                 train_acc=[[] for _ in range(self.eagle_config.parallel_draft_step)],
+                eagle_phase_loss=None,
+                lora_eagle_phase_loss=None,
+                preservation_phase_loss=base_outputs.loss,
             )
 
         if not isinstance(past_key_values, Cache):
@@ -1058,12 +1062,19 @@ class HFEagleModel(EagleModel):
         else:
             loss = (base_outputs.loss or 0) + (eagle_loss or 0)
 
+        # Tag loss by phase for logging
+        eagle_phase_loss = eagle_loss if phase == "eagle" else None
+        lora_eagle_phase_loss = eagle_loss if phase == "lora_eagle" else None
+
         return ModelOutput(
             loss=loss,
             logits=base_outputs.logits,
             past_key_values=past_key_values,
             hidden_states=base_outputs.out_hiddens,
             train_acc=train_accs,
+            eagle_phase_loss=eagle_phase_loss,
+            lora_eagle_phase_loss=lora_eagle_phase_loss,
+            preservation_phase_loss=None,
         )
 
     def _eagle_loss(
