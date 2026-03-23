@@ -251,7 +251,7 @@ class EagleTrainerWithAccLog(Trainer):
             self.state.phase_losses = {"eagle": [], "lora_eagle": [], "preservation": []}
         kwargs.pop("num_items_in_batch", None)
         loss, outputs = super().compute_loss(return_outputs=True, *args, **kwargs)
-        if hasattr(outputs, "train_acc"):
+        if hasattr(outputs, "train_acc") and any(outputs.train_acc):
             self.state.training_accs.append(outputs.train_acc)
         # Track per-phase losses
         for key, attr in [
