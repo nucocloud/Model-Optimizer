@@ -144,12 +144,3 @@ class EagleConfig(ModeloptBaseConfig):
             "the LoRA-adapted base model output and the original base model output."
         ),
     )
-
-    eagle_base_lora_gradient_scale: float = ModeloptField(
-        default=0.01,
-        description=(
-            "Fraction of EAGLE loss gradient that leaks through aux hidden states to LoRA. "
-            "Controls the trade-off between LoRA receiving a useful signal from EAGLE (higher) "
-            "and EAGLE training stability (lower). Set to 0 to fully detach."
-        ),
-    )

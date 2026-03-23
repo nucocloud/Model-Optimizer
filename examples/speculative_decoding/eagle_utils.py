@@ -170,9 +170,37 @@ def make_eagle_supervised_data_module(
 class EagleTrainerWithAccLog(Trainer):
     """Wrapper around Trainer that logs training accuracy."""
 
-    def __init__(self, *args, lora_lr_multiplier: float = 1.0, **kwargs):
+    def __init__(
+        self,
+        *args,
+        lora_lr_multiplier: float = 1.0,
+        lora_phase_a_steps: int = 100,
+        lora_phase_b_steps: int = 10,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.lora_lr_multiplier = lora_lr_multiplier
+        self.lora_phase_a_steps = lora_phase_a_steps
+        self.lora_phase_b_steps = lora_phase_b_steps
+        # Check if the model uses LoRA co-training
+        self._has_lora = getattr(self.model, "eagle_base_lora", False)
+
+    def _get_inner_model(self):
+        """Get the unwrapped model (handles DDP/FSDP wrapping)."""
+        model = self.model
+        while hasattr(model, "module"):
+            model = model.module
+        return model
+
+    def _set_lora_phase(self, lora_phase: bool):
+        """Toggle between EAGLE phase (A) and LoRA phase (B)."""
+        inner = self._get_inner_model()
+        inner._lora_phase = lora_phase
+        for name, param in inner.named_parameters():
+            if "eagle_module" in name:
+                param.requires_grad = not lora_phase
+            elif "lora_" in name:
+                param.requires_grad = lora_phase
 
     def create_optimizer(self):
         """Override to give LoRA parameters a higher learning rate."""
@@ -197,6 +225,15 @@ class EagleTrainerWithAccLog(Trainer):
                         new_groups.append(group)
                 self.optimizer.param_groups = new_groups
         return self.optimizer
+
+    def training_step(self, *args, **kwargs):
+        """Override to toggle alternating LoRA/EAGLE training phases."""
+        if self._has_lora:
+            cycle = self.lora_phase_a_steps + self.lora_phase_b_steps
+            step_in_cycle = self.state.global_step % cycle
+            lora_phase = step_in_cycle >= self.lora_phase_a_steps
+            self._set_lora_phase(lora_phase)
+        return super().training_step(*args, **kwargs)
 
     def compute_loss(self, *args, **kwargs):
         """Override compute_loss to save train accs in trainer state."""

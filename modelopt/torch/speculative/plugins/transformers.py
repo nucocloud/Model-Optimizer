@@ -512,15 +512,12 @@ class HFEagleModel(EagleModel):
     def _collect_aux_hidden_states_forward_hook(self, module, input, output) -> None:
         """Collect auxiliary hidden states from base model intermediate layers, save them in attribute."""
         raw = output if isinstance(output, torch.Tensor) else output[0]
-        # When LoRA co-training is active, let a small fraction of the gradient leak
-        # through aux_hiddens to LoRA parameters. This gives LoRA a directional signal
-        # from EAGLE loss ("change hidden states to help EAGLE predict") without
-        # destabilizing EAGLE training via rapid input changes (the "moving target" problem).
-        # Formula: detached + scale * (live - detached) has gradient scale * d(live)/d(LoRA).
-        if self.training and getattr(self, "eagle_base_lora", False):
-            scale = self.eagle_base_lora_gradient_scale
-            detached = raw.clone().detach()
-            self._aux_hidden_states.append(detached + scale * (raw.clone() - detached))
+        # In LoRA phase (Phase B of alternating training), keep the computation graph
+        # so EAGLE loss backpropagates through hidden states to LoRA.
+        # EAGLE is frozen in Phase B so there is no moving-target instability.
+        # In EAGLE phase (Phase A) or non-LoRA training, detach as usual.
+        if self.training and getattr(self, "_lora_phase", False):
+            self._aux_hidden_states.append(raw.clone())
         else:
             self._aux_hidden_states.append(raw.clone().detach())
 
@@ -659,6 +656,9 @@ class HFEagleModel(EagleModel):
             if self.eagle_offline:
                 raise ValueError("eagle_base_lora is incompatible with eagle_offline=True")
             self._inject_base_lora()
+            # Phase flag for alternating training: False = Phase A (train EAGLE),
+            # True = Phase B (train LoRA). Toggled by the trainer.
+            self._lora_phase = False
 
         # delete base model layers for offline training
         if self.eagle_offline:
@@ -822,10 +822,11 @@ class HFEagleModel(EagleModel):
                     **kwargs,
                 )
 
-        # When using LoRA, run a reference forward with LoRA disabled to get the original
-        # model distribution for the preservation loss.
+        # In LoRA phase (Phase B), run a reference forward with LoRA disabled
+        # for the preservation loss. Skip in EAGLE phase (Phase A) to save compute.
+        lora_phase = getattr(self, "_lora_phase", False)
         ref_logits = None
-        if self.eagle_base_lora:
+        if lora_phase:
             self._set_base_lora_enabled(False)
             try:
                 ref_logits = _run_forward(no_grad=True).logits
@@ -834,8 +835,9 @@ class HFEagleModel(EagleModel):
                     self._aux_hidden_states.clear()
                 self._set_base_lora_enabled(True)
 
-        # Main forward — LoRA params receive gradients when eagle_base_lora is True.
-        outputs = _run_forward(no_grad=freeze_base_model and not self.eagle_base_lora)
+        # In LoRA phase, run with grad so EAGLE loss backprops to LoRA.
+        # In EAGLE phase, LoRA is frozen so no_grad for base model is fine.
+        outputs = _run_forward(no_grad=freeze_base_model and not lora_phase)
         past_key_values = getattr(outputs, "past_key_values", None)
         base_model_logits = outputs.logits
 
@@ -1014,17 +1016,16 @@ class HFEagleModel(EagleModel):
             else:
                 eagle_input_hiddens = eagle_output_hiddens
 
+            # In LoRA phase (Phase B), allow EAGLE loss to backprop through logits
+            # to LoRA. Safe because EAGLE is frozen — no co-adaptation collapse.
+            # In EAGLE phase (Phase A), detach to keep standard stable training.
+            lora_phase = getattr(self, "_lora_phase", False)
+            target_logits = base_outputs.logits if lora_phase else base_outputs.logits.detach()
+
             for i in range(self.eagle_config.parallel_draft_step):
                 eagle_logit = eagle_logits[i]
                 classification_loss, acc = self._eagle_loss(
-                    # base model predict +1 tok, while eagle predict +2
-                    # so we shift base model outputs compared to eagle outputs
-                    # additionally, we mask the first n tok of eagle outputs at nth TTT step
-                    # Detach: EAGLE loss must not backprop into LoRA through the logits path.
-                    # The coupled LoRA-EAGLE logits gradient always collapses to a degenerate
-                    # solution regardless of preservation loss weight or B initialization.
-                    # LoRA trains via LM loss + preservation loss; EAGLE via EAGLE loss only.
-                    base_outputs.logits.detach()[:, 1 + i + ttt_step :],
+                    target_logits[:, 1 + i + ttt_step :],
                     eagle_logit[:, ttt_step : -(1 + i)],
                     loss_mask[:, 1 + ttt_step :] if i == 0 else loss_mask[:, 1 + ttt_step : -i],
                 )

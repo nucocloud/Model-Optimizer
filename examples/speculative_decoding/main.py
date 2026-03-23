@@ -169,20 +169,29 @@ class EagleArguments:
             )
         },
     )
-    eagle_base_lora_gradient_scale: float = field(
-        default=0.01,
-        metadata={
-            "help": (
-                "Fraction of EAGLE loss gradient that leaks through aux hidden states to LoRA. "
-                "Controls trade-off between LoRA signal strength and EAGLE training stability."
-            )
-        },
-    )
     eagle_base_lora_lr_multiplier: float = field(
         default=1.0,
         metadata={
             "help": (
                 "Learning rate multiplier for LoRA parameters relative to the base learning rate."
+            )
+        },
+    )
+    eagle_base_lora_phase_a_steps: int = field(
+        default=100,
+        metadata={
+            "help": (
+                "Number of steps per EAGLE training phase (Phase A) in alternating LoRA co-training. "
+                "During Phase A, LoRA is frozen and EAGLE trains normally."
+            )
+        },
+    )
+    eagle_base_lora_phase_b_steps: int = field(
+        default=10,
+        metadata={
+            "help": (
+                "Number of steps per LoRA training phase (Phase B) in alternating LoRA co-training. "
+                "During Phase B, EAGLE is frozen and LoRA trains via EAGLE loss + preservation loss."
             )
         },
     )
@@ -276,7 +285,6 @@ def train():
                 "eagle_base_lora_alpha": eagle_args.eagle_base_lora_alpha,
                 "eagle_base_lora_target_modules": lora_target_modules,
                 "eagle_base_lora_preservation_loss_weight": eagle_args.eagle_base_lora_preservation_loss_weight,
-                "eagle_base_lora_gradient_scale": eagle_args.eagle_base_lora_gradient_scale,
             }
 
             mtsp.convert(model, [("eagle", config)])
@@ -304,6 +312,8 @@ def train():
         args=training_args,
         callbacks=[EagleTrainingPlot(training_args.ar_validate_steps, training_args.estimate_ar)],
         lora_lr_multiplier=eagle_args.eagle_base_lora_lr_multiplier,
+        lora_phase_a_steps=eagle_args.eagle_base_lora_phase_a_steps,
+        lora_phase_b_steps=eagle_args.eagle_base_lora_phase_b_steps,
         **data_module,
     )
 
