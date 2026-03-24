@@ -102,7 +102,19 @@ def main():
 
         # Load LoRA adapter via PeftModel and merge
         print("Loading and merging LoRA adapter...")
-        model = PeftModel.from_pretrained(model, tmp_path)
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = PeftModel.from_pretrained(model, tmp_path)
+
+        missing_warnings = [w for w in caught if "missing adapter keys" in str(w.message)]
+        if missing_warnings:
+            raise RuntimeError(
+                f"LoRA weights failed to load — missing adapter keys. "
+                f"Re-export the checkpoint with the latest export_hf_checkpoint.py.\n"
+                f"{missing_warnings[0].message}"
+            )
         model = model.merge_and_unload()
 
     print("LoRA merged successfully.")
