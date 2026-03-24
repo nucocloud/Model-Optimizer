@@ -207,10 +207,12 @@ class EagleExporter(SpeculativeDecodingExporter):
         }
         save_file(lora_sd, export_dir / "lora_adapter_model.safetensors")
 
+        # Infer target modules from the exported LoRA keys (e.g., "q_proj", "v_proj")
+        target_modules = sorted({k.split(".")[-3] for k in lora_sd if ".lora_A." in k})
         lora_config = LoraConfig(
             r=self.model.eagle_base_lora_rank,
             lora_alpha=self.model.eagle_base_lora_alpha,
-            target_modules=self.model.eagle_base_lora_target_modules or None,
+            target_modules=target_modules,
             bias="none",
         )
         with open(export_dir / "lora_adapter_config.json", "w") as f:
