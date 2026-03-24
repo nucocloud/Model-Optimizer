@@ -34,7 +34,6 @@ from pathlib import Path
 from peft import LoraConfig
 from peft.mapping import inject_adapter_in_model
 from peft.tuners.lora import LoraLayer
-from peft.utils import _remove_adapter
 from safetensors.torch import load_file
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -117,7 +116,7 @@ def main():
     for module in model.model.modules():
         if isinstance(module, LoraLayer):
             module.merge()
-    _remove_adapter(model.model, "default")
+            module.delete_adapter("default")
     print("LoRA merged and removed.")
 
     # Save
