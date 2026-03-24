@@ -29,6 +29,7 @@ them into the base weights, and saves the fused model + tokenizer.
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from peft import PeftModel
@@ -79,9 +80,9 @@ def main():
     lora_sd = load_file(weights_path)
     print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
 
-    # PeftModel expects keys prefixed with "base_model.model." in the safetensors file.
-    # Exported keys start with "model." so we prepend "base_model.model.".
-    peft_sd = {f"base_model.model.{k}": v for k, v in lora_sd.items()}
+    # Strip any .default. segment from keys for compatibility across peft versions
+    # e.g., lora_A.default.weight -> lora_A.weight
+    lora_sd = {re.sub(r"\.default\.", ".", k): v for k, v in lora_sd.items()}
 
     # Prepare a temporary adapter directory that PeftModel can load
     import tempfile
@@ -90,7 +91,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        save_file(peft_sd, tmp_path / "adapter_model.safetensors")
+        save_file(lora_sd, tmp_path / "adapter_model.safetensors")
         # Write adapter_config.json for PeftModel
         with open(tmp_path / "adapter_config.json", "w") as f:
             json.dump(lora_config_dict, f)
@@ -104,7 +105,7 @@ def main():
 
         # Load LoRA adapter via PeftModel and merge
         print("Loading and merging LoRA adapter...")
-        print(f"  Adapter keys (first 2): {list(peft_sd.keys())[:2]}")
+        print(f"  Adapter keys (first 2): {list(lora_sd.keys())[:2]}")
         import warnings
 
         with warnings.catch_warnings(record=True) as caught:
@@ -118,7 +119,7 @@ def main():
                 f"Re-export the checkpoint with the latest export_hf_checkpoint.py.\n"
                 f"{missing_warnings[0].message}"
             )
-        print(f"  All {len(peft_sd)} LoRA tensors loaded successfully.")
+        print(f"  All {len(lora_sd)} LoRA tensors loaded successfully.")
         model = model.merge_and_unload()
 
     print("LoRA merged successfully.")
