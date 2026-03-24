@@ -178,9 +178,7 @@ def train():
 
     if checkpoint:
         with patch_transformers5_params_loading():
-            _, model = load_vlm_or_llm_with_kwargs(
-                checkpoint, torch_dtype="auto", trust_remote_code=True
-            )
+            _, model = load_vlm_or_llm_with_kwargs(checkpoint, dtype="auto", trust_remote_code=True)
         tokenizer = transformers.AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=True)
     else:
         # To avoid OOM for large models, we load and convert model on CPU first.
@@ -188,7 +186,7 @@ def train():
         offline_kwargs = {"num_hidden_layers": 0} if use_offline_training else {}
         model_config, model = load_vlm_or_llm_with_kwargs(
             model_args.model_name_or_path,
-            torch_dtype="auto",
+            dtype="auto",
             device_map="cpu",
             trust_remote_code=True,
             **offline_kwargs,
