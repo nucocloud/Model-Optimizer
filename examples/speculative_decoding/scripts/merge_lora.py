@@ -29,7 +29,6 @@ them into the base weights, and saves the fused model + tokenizer.
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 from peft import PeftModel
@@ -80,10 +79,6 @@ def main():
     lora_sd = load_file(weights_path)
     print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
 
-    # Strip any .default. segment from keys for compatibility across peft versions
-    # e.g., lora_A.default.weight -> lora_A.weight
-    lora_sd = {re.sub(r"\.default\.", ".", k): v for k, v in lora_sd.items()}
-
     # Prepare a temporary adapter directory that PeftModel can load
     import tempfile
 
@@ -113,12 +108,13 @@ def main():
             warnings.filterwarnings("ignore", message=".*missing adapter keys.*")
             model = PeftModel.from_pretrained(model, tmp_path)
 
-        # Verify at least one LoRA weight is non-zero
-        lora_norms = [v.norm().item() for k, v in model.state_dict().items() if ".lora_A." in k]
-        if not lora_norms or all(n == 0 for n in lora_norms):
-            raise RuntimeError("LoRA weights are all zero — adapter loading failed.")
+        # Verify lora_B weights are non-zero (B is init'd to zero, so non-zero means loaded)
+        lora_b_norms = [v.norm().item() for k, v in model.state_dict().items() if ".lora_B." in k]
+        if not lora_b_norms or all(n == 0 for n in lora_b_norms):
+            raise RuntimeError("LoRA-B weights are all zero — adapter loading failed.")
         print(
-            f"  Loaded {len(lora_norms)} LoRA-A matrices (mean norm={sum(lora_norms) / len(lora_norms):.4f})."
+            f"  Loaded {len(lora_b_norms)} LoRA-B matrices "
+            f"(mean norm={sum(lora_b_norms) / len(lora_b_norms):.4f})."
         )
         model = model.merge_and_unload()
 
