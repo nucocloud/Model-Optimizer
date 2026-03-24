@@ -74,17 +74,20 @@ def main():
             f"in {lora_dir}. Run export_hf_checkpoint.py first."
         )
 
-    # The exported LoRA keys are prefixed with "model." (the base_model path in the EAGLE model).
-    # PeftModel expects keys relative to the base model, so we need to prepare adapter files
-    # with the "model." prefix stripped. We create a temporary adapter directory for PeftModel.
+    # The exported LoRA keys use the format: model.layers.0.self_attn.q_proj.lora_A.weight
+    # PeftModel expects: model.layers.0.self_attn.q_proj.lora_A.default.weight
+    # We need to insert ".default" before the final ".weight" in lora_A/lora_B keys.
     with open(config_path) as f:
         lora_config_dict = json.load(f)
     lora_sd = load_file(weights_path)
     print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
 
-    # Strip the "model." prefix from keys
-    prefix = "model."
-    cleaned_sd = {k.removeprefix(prefix): v for k, v in lora_sd.items()}
+    import re
+
+    # Rename lora_A.weight -> lora_A.default.weight (and lora_B similarly)
+    cleaned_sd = {
+        re.sub(r"(lora_[AB])\.weight$", r"\1.default.weight", k): v for k, v in lora_sd.items()
+    }
 
     # Prepare a temporary adapter directory that PeftModel can load
     import tempfile
