@@ -31,9 +31,7 @@ import argparse
 import json
 from pathlib import Path
 
-from peft import LoraConfig
-from peft.mapping import inject_adapter_in_model
-from peft.tuners.lora import LoraLayer
+from peft import PeftModel
 from safetensors.torch import load_file
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -67,7 +65,7 @@ def main():
     args = parse_args()
     lora_dir = Path(args.exported_lora_dir)
 
-    # Load LoRA config and weights from the exported checkpoint
+    # Verify exported files exist
     config_path = lora_dir / "lora_adapter_config.json"
     weights_path = lora_dir / "lora_adapter_model.safetensors"
     if not config_path.exists() or not weights_path.exists():
@@ -76,48 +74,43 @@ def main():
             f"in {lora_dir}. Run export_hf_checkpoint.py first."
         )
 
+    # The exported LoRA keys are prefixed with "model." (the base_model path in the EAGLE model).
+    # PeftModel expects keys relative to the base model, so we need to prepare adapter files
+    # with the "model." prefix stripped. We create a temporary adapter directory for PeftModel.
     with open(config_path) as f:
         lora_config_dict = json.load(f)
-    lora_config = LoraConfig(
-        **{k: v for k, v in lora_config_dict.items() if k in LoraConfig().to_dict()}
-    )
     lora_sd = load_file(weights_path)
-    print(
-        f"Loaded LoRA config (rank={lora_config.r}, alpha={lora_config.lora_alpha}) "
-        f"and {len(lora_sd)} tensors from {lora_dir}"
-    )
+    print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
 
-    # Load the original base model
-    print(f"Loading base model from {args.base_model_path}...")
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base_model_path, torch_dtype="auto", device_map="cpu", trust_remote_code=True
-    )
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model_path, trust_remote_code=True)
-
-    # Inject LoRA adapters into the base model's transformer body
-    # The exported keys are prefixed with "model." (the base_model_path in the EAGLE model)
-    print("Injecting LoRA adapters...")
-    inject_adapter_in_model(lora_config, model.model, adapter_name="default")
-
-    # Strip the "model." prefix from exported keys to match the injected model.model namespace
+    # Strip the "model." prefix from keys
     prefix = "model."
     cleaned_sd = {k.removeprefix(prefix): v for k, v in lora_sd.items()}
 
-    missing, unexpected = model.model.load_state_dict(cleaned_sd, strict=False)
-    lora_missing = [k for k in missing if "lora_" in k]
-    if lora_missing:
-        print(f"WARNING: Missing LoRA keys: {lora_missing}")
-    if unexpected:
-        print(f"WARNING: Unexpected keys: {unexpected}")
-    print("LoRA weights loaded.")
+    # Prepare a temporary adapter directory that PeftModel can load
+    import tempfile
 
-    # Merge LoRA into base model weights and remove adapters
-    print("Merging LoRA into base weights...")
-    for module in model.model.modules():
-        if isinstance(module, LoraLayer):
-            module.merge()
-            module.delete_adapter("default")
-    print("LoRA merged and removed.")
+    from safetensors.torch import save_file
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        save_file(cleaned_sd, tmp_path / "adapter_model.safetensors")
+        # Write adapter_config.json for PeftModel
+        with open(tmp_path / "adapter_config.json", "w") as f:
+            json.dump(lora_config_dict, f)
+
+        # Load the original base model
+        print(f"Loading base model from {args.base_model_path}...")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.base_model_path, torch_dtype="auto", device_map="cpu", trust_remote_code=True
+        )
+        tokenizer = AutoTokenizer.from_pretrained(args.base_model_path, trust_remote_code=True)
+
+        # Load LoRA adapter via PeftModel and merge
+        print("Loading and merging LoRA adapter...")
+        model = PeftModel.from_pretrained(model, tmp_path)
+        model = model.merge_and_unload()
+
+    print("LoRA merged successfully.")
 
     # Save
     print(f"Saving merged model to {args.output_path}...")
