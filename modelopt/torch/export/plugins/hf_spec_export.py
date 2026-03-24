@@ -201,6 +201,10 @@ class EagleExporter(SpeculativeDecodingExporter):
                 "No LoRA adapter tensors found in the model state dict. "
                 "Ensure eagle_base_lora=True and the model was converted with LoRA adapters."
             )
+        # Rename keys to PeftModel format: lora_A.weight -> lora_A.default.weight
+        lora_sd = {
+            re.sub(r"(lora_[AB])\.weight$", r"\1.default.weight", k): v for k, v in lora_sd.items()
+        }
         save_file(lora_sd, export_dir / "lora_adapter_model.safetensors")
 
         lora_config = LoraConfig(

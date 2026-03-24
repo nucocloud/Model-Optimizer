@@ -74,20 +74,12 @@ def main():
             f"in {lora_dir}. Run export_hf_checkpoint.py first."
         )
 
-    # The exported LoRA keys use the format: model.layers.0.self_attn.q_proj.lora_A.weight
-    # PeftModel expects: model.layers.0.self_attn.q_proj.lora_A.default.weight
-    # We need to insert ".default" before the final ".weight" in lora_A/lora_B keys.
+    # The exported LoRA keys already use PeftModel-compatible format
+    # (e.g., model.layers.0.self_attn.q_proj.lora_A.default.weight).
     with open(config_path) as f:
         lora_config_dict = json.load(f)
     lora_sd = load_file(weights_path)
     print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
-
-    import re
-
-    # Rename lora_A.weight -> lora_A.default.weight (and lora_B similarly)
-    cleaned_sd = {
-        re.sub(r"(lora_[AB])\.weight$", r"\1.default.weight", k): v for k, v in lora_sd.items()
-    }
 
     # Prepare a temporary adapter directory that PeftModel can load
     import tempfile
@@ -96,7 +88,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        save_file(cleaned_sd, tmp_path / "adapter_model.safetensors")
+        save_file(lora_sd, tmp_path / "adapter_model.safetensors")
         # Write adapter_config.json for PeftModel
         with open(tmp_path / "adapter_config.json", "w") as f:
             json.dump(lora_config_dict, f)
