@@ -474,10 +474,10 @@ def enable_cp_ttt_patch():
             modelopt.torch.speculative.plugins.transformers.ENABLE_CP_TTT_PATCH = False
 
 
-def load_vlm_or_llm_with_kwargs(model_name_or_path: str, **kwargs):
+def load_vlm_or_llm_with_kwargs(model_name_or_path: str, trust_remote_code: bool = False, **kwargs):
     """Load a VLM or LLM with kwargs. Returns the model and model config."""
     model_config = transformers.AutoConfig.from_pretrained(
-        model_name_or_path, trust_remote_code=True
+        model_name_or_path, trust_remote_code=trust_remote_code
     )
     if "vl" in model_config.model_type.lower():
         model_cls = transformers.AutoModelForVision2Seq
@@ -488,7 +488,9 @@ def load_vlm_or_llm_with_kwargs(model_name_or_path: str, **kwargs):
         if hasattr(model_config, "layer_types"):
             kwargs["layer_types"] = []
 
-    return model_config, model_cls.from_pretrained(model_name_or_path, **kwargs)
+    return model_config, model_cls.from_pretrained(
+        model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+    )
 
 
 @contextlib.contextmanager

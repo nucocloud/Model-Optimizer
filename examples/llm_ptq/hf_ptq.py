@@ -745,6 +745,7 @@ def pre_quantize(
             args.pyt_ckpt_path,
             "before quantization",
             allow_fallback=False,
+            trust_remote_code=args.trust_remote_code,
         )
     else:
         generated_ids_before_ptq = full_model.generate(preview_input_ids, max_new_tokens=100)
@@ -795,6 +796,7 @@ def post_quantize(
             args.pyt_ckpt_path,
             "after quantization",
             allow_fallback=False,
+            trust_remote_code=args.trust_remote_code,
         )
     else:
         warnings.warn(

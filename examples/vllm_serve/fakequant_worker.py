@@ -189,7 +189,7 @@ def _create_new_data_cls(data_cls, **kwargs):
 def _fakequant_run_prolog_worker(self) -> None:
     tokenizer = AutoTokenizer.from_pretrained(
         self.model_runner.model_config.tokenizer,
-        trust_remote_code=True,
+        trust_remote_code=False,
     )
     if tokenizer.pad_token != "<unk>" or tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
