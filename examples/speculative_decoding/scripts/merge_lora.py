@@ -31,7 +31,6 @@ import argparse
 import json
 from pathlib import Path
 
-from peft import PeftModel
 from safetensors.torch import load_file
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -78,46 +77,85 @@ def main():
         lora_config_dict = json.load(f)
     lora_sd = load_file(weights_path)
     print(f"Loaded {len(lora_sd)} LoRA tensors from {lora_dir}")
+    print(f"  Sample keys: {list(lora_sd.keys())[:4]}")
 
-    # Prepare a temporary adapter directory that PeftModel can load
-    import tempfile
+    # Load the original base model
+    print(f"Loading base model from {args.base_model_path}...")
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model_path, torch_dtype="auto", device_map="cpu", trust_remote_code=True
+    )
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model_path, trust_remote_code=True)
 
-    from safetensors.torch import save_file
+    # Create PeftModel by injecting LoRA layers from config
+    print("Injecting LoRA layers...")
+    from peft import LoraConfig, get_peft_model
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        save_file(lora_sd, tmp_path / "adapter_model.safetensors")
-        # Write adapter_config.json for PeftModel
-        with open(tmp_path / "adapter_config.json", "w") as f:
-            json.dump(lora_config_dict, f)
+    lora_config = LoraConfig(
+        r=lora_config_dict["r"],
+        lora_alpha=lora_config_dict["lora_alpha"],
+        target_modules=lora_config_dict["target_modules"],
+        bias=lora_config_dict.get("bias", "none"),
+    )
+    model = get_peft_model(model, lora_config)
 
-        # Load the original base model
-        print(f"Loading base model from {args.base_model_path}...")
-        model = AutoModelForCausalLM.from_pretrained(
-            args.base_model_path, torch_dtype="auto", device_map="cpu", trust_remote_code=True
+    # Build key mapping: exported keys -> PeftModel state dict keys
+    # PeftModel keys look like: base_model.model.model.layers.0.self_attn.q_proj.lora_A.default.weight
+    # Exported keys look like:  model.layers.0.self_attn.q_proj.lora_A.default.weight
+    peft_lora_keys = {k for k in model.state_dict() if ".lora_A." in k or ".lora_B." in k}
+    print(f"  PeftModel has {len(peft_lora_keys)} LoRA parameters")
+    print(f"  Sample PeftModel keys: {sorted(peft_lora_keys)[:4]}")
+
+    # Determine prefix by matching the first exported key against PeftModel keys
+    sample_export_key = next(iter(lora_sd))
+    matching_peft_keys = [k for k in peft_lora_keys if k.endswith(sample_export_key)]
+    if matching_peft_keys:
+        prefix = matching_peft_keys[0][: -len(sample_export_key)]
+        print(f"  Detected key prefix: '{prefix}'")
+    else:
+        # Try without .default. segment (in case export format differs)
+        prefix = ""
+        print("  WARNING: Could not auto-detect prefix, trying direct key match")
+
+    # Load weights into PeftModel
+    print("Loading LoRA weights into PeftModel...")
+    peft_sd = model.state_dict()
+    loaded_count = 0
+    missing_keys = []
+    for export_key, tensor in lora_sd.items():
+        peft_key = prefix + export_key
+        if peft_key in peft_sd:
+            peft_sd[peft_key] = tensor
+            loaded_count += 1
+        else:
+            missing_keys.append(export_key)
+
+    if missing_keys:
+        print(f"  WARNING: {len(missing_keys)} exported keys not found in PeftModel:")
+        for k in missing_keys[:10]:
+            print(f"    {k}")
+        if len(missing_keys) > 10:
+            print(f"    ... and {len(missing_keys) - 10} more")
+
+    if loaded_count == 0:
+        raise RuntimeError(
+            "No exported LoRA keys matched PeftModel keys. "
+            "Check export format vs PeftModel key naming."
         )
-        tokenizer = AutoTokenizer.from_pretrained(args.base_model_path, trust_remote_code=True)
 
-        # Load LoRA adapter via PeftModel and merge
-        print("Loading and merging LoRA adapter...")
-        import warnings
+    model.load_state_dict(peft_sd)
+    print(f"  Successfully loaded {loaded_count}/{len(lora_sd)} LoRA tensors")
 
-        with warnings.catch_warnings():
-            # peft 0.18+ emits a spurious "missing adapter keys" warning
-            # even when weights load correctly — suppress it.
-            warnings.filterwarnings("ignore", message=".*missing adapter keys.*")
-            model = PeftModel.from_pretrained(model, tmp_path)
+    # Verify lora_B weights are non-zero (B is init'd to zero, so non-zero means loaded)
+    lora_b_norms = [v.norm().item() for k, v in model.state_dict().items() if ".lora_B." in k]
+    if not lora_b_norms or all(n == 0 for n in lora_b_norms):
+        raise RuntimeError("LoRA-B weights are all zero — adapter loading failed.")
+    print(
+        f"  Verified: {len(lora_b_norms)} LoRA-B matrices "
+        f"(mean norm={sum(lora_b_norms) / len(lora_b_norms):.4f})"
+    )
 
-        # Verify lora_B weights are non-zero (B is init'd to zero, so non-zero means loaded)
-        lora_b_norms = [v.norm().item() for k, v in model.state_dict().items() if ".lora_B." in k]
-        if not lora_b_norms or all(n == 0 for n in lora_b_norms):
-            raise RuntimeError("LoRA-B weights are all zero — adapter loading failed.")
-        print(
-            f"  Loaded {len(lora_b_norms)} LoRA-B matrices "
-            f"(mean norm={sum(lora_b_norms) / len(lora_b_norms):.4f})."
-        )
-        model = model.merge_and_unload()
-
+    # Merge LoRA into base weights and remove adapter wrappers
+    model = model.merge_and_unload()
     print("LoRA merged successfully.")
 
     # Save
