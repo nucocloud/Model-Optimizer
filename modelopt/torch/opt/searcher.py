@@ -35,6 +35,7 @@ import torch.nn as nn
 
 from modelopt.torch.utils import distributed as dist
 from modelopt.torch.utils import no_stdout, print_rank_0, run_forward_loop, warn_rank_0
+from modelopt.torch.utils.serialization import safe_load
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -276,8 +277,7 @@ class BaseSearcher(ABC):
             return False
 
         print_rank_0(f"Loading searcher state from {checkpoint}...")
-        # Security NOTE: weights_only=False is used here on ModelOpt-generated ckpt, not on untrusted user input
-        state_dict = torch.load(checkpoint, weights_only=False)
+        state_dict = safe_load(checkpoint, weights_only=False)
         if strict:
             assert state_dict.keys() == self.state_dict().keys(), "Keys in checkpoint don't match!"
         for key, default_val in self.default_state_dict.items():

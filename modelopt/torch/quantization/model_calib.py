@@ -30,6 +30,7 @@ from tqdm import tqdm
 from modelopt.torch.opt.searcher import ForwardLoop
 from modelopt.torch.quantization.utils.activation_collector import LayerActivationCollector
 from modelopt.torch.utils import print_rank_0
+from modelopt.torch.utils.serialization import safe_load
 from modelopt.torch.utils.distributed import DistributedProcessGroup, ParallelState
 from modelopt.torch.utils.network import bind_forward_method, unpatch_forward_method
 from modelopt.torch.utils.perf import get_used_gpu_mem_fraction
@@ -1732,7 +1733,7 @@ def gptq_lite(
     def load_hessian_state(path, tensor_mapping):
         """Load hessian state from file."""
         print_rank_0(f"Loading hessian state from {path}")
-        loaded_state = torch.load(path, map_location="cpu")
+        loaded_state = safe_load(path, map_location="cpu")
 
         for name, (shape, device) in tensor_mapping.items():
             if name not in loaded_state:

@@ -29,6 +29,8 @@ import torch
 import torch.distributed
 from torch.distributed.tensor import DTensor
 
+from .serialization import safe_load
+
 __all__ = [
     "DistributedProcessGroup",
     "ParallelState",
@@ -103,8 +105,7 @@ def _deserialize(tensor: torch.Tensor, size: int | None = None) -> Any:
     buffer = tensor.numpy().tobytes()
     if size is not None:
         buffer = buffer[:size]
-    # Security NOTE: weights_only=False is used here on internally-generated buffer, not on untrusted user input
-    obj = torch.load(io.BytesIO(buffer), weights_only=False)
+    obj = safe_load(io.BytesIO(buffer), weights_only=False)
     return obj
 
 

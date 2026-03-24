@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,18 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utility functions."""
+"""Serialization utilities for secure checkpoint loading."""
 
-from ._pytree import *
-from .cpp_extension import *
-from .dataset_utils import *
-from .graph import *
-from .import_utils import *
-from .list import *
-from .logging import *
-from .network import *
-from .perf import *
-from .regex import *
-from .serialization import *
-from .tensor import *
-from .vlm_dataset_utils import *
+import os
+from io import BytesIO
+from typing import Any, BinaryIO
+
+import torch
+
+
+def safe_load(f: str | os.PathLike | BinaryIO | bytes, **kwargs) -> Any:
+    """Load a checkpoint securely using weights_only=True by default."""
+    kwargs.setdefault("weights_only", True)
+
+    if isinstance(f, (bytes, bytearray)):
+        f = BytesIO(f)
+
+    return torch.load(f, **kwargs)
