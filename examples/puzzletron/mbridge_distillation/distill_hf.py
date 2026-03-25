@@ -44,10 +44,9 @@ from megatron.bridge.training.post_training.distillation import ModelOptDistillC
 from megatron.core.datasets.utils import get_blend_from_list
 from megatron.core.distributed import DistributedDataParallelConfig
 
+# Import to register heterogeneous bridges (side effect)
+import modelopt.torch.puzzletron.export.mbridge  # noqa: F401
 import modelopt.torch.utils.distributed as dist
-from modelopt.torch.puzzletron.export.mbridge.export_mbridge_to_hf import (
-    export_to_hf_and_copy_config,
-)
 from modelopt.torch.utils import print_rank_0
 
 SEED = 1234
@@ -128,13 +127,6 @@ def get_args():
             "Path where to save the HuggingFace export. "
             "If provided, exports last iteration checkpoint to HF format after distillation."
         ),
-    )
-    parser.add_argument(
-        "--hf_model",
-        type=str,
-        required=True,
-        help="HuggingFace model ID to use as template for export (e.g., meta-llama/Llama-3.1-8B-Instruct). "
-        "Should match the base architecture of the student model.",
     )
     args = parser.parse_args()
 
@@ -272,13 +264,16 @@ def main(args: argparse.Namespace):
 
         # Only rank 0 exports
         if is_rank_0:
-            export_to_hf_and_copy_config(
-                student_hf_path=args.student_hf_path,
-                checkpoint_dir=checkpoint_dir,
-                train_iters=args.train_iters,
-                hf_export_path=args.hf_export_path,
-                hf_model=args.hf_model,
-                trust_remote_code=args.trust_remote_code,
+            bridge = AutoBridge.from_hf_pretrained(
+                args.student_hf_path, trust_remote_code=args.trust_remote_code
+            )
+            # Create subblocks_safetensors directory else safetensors saving will fail
+            os.makedirs(os.path.join(args.hf_export_path, "subblocks_safetensors"), exist_ok=True)
+            bridge.export_ckpt(
+                megatron_path=f"{checkpoint_dir}/iter_{args.train_iters:07d}",
+                hf_path=args.hf_export_path,
+                show_progress=True,
+                strict=True,
             )
 
 

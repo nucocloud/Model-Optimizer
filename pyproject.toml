@@ -219,7 +219,6 @@ extend-ignore = [
     "E",
     "F",
     "FURB",
-    "ISC",
     "N",
     "PERF",
     "PGH",
