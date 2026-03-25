@@ -32,7 +32,6 @@ def test_distill_hf(project_root_path: Path, tmp_path: Path):
     and runs mbridge distillation. The models are created with reduced size for faster testing.
     Models are converted to include block_configs.
     """
-    tmp_path = Path("/tmp/test_distill_hf")
     # Prepare student and teacher models
     student_hf_path, teacher_hf_path = _prepare_student_and_teacher_models(
         project_root_path, tmp_path
