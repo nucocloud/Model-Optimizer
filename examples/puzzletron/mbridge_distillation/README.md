@@ -70,8 +70,8 @@ torchrun --nproc_per_node=8 examples/puzzletron/mbridge_distillation/distill_hf.
     --teacher_hf_path /path/to/teacher/huggingface/checkpoint \
     --data_paths 1.0 /path/to/hf_datasets/wikitext-103-v1/Salesforce--wikitext_wikitext-103-v1_train_text_document \
     --output_dir /path/to/distilled/checkpoint \
-    --hf-export-path /path/to/exported/hf/model \
-    --hf-model meta-llama/Llama-3.1-8B-Instruct \
+    --hf_export_path /path/to/exported/hf/model \
+    --hf_model meta-llama/Llama-3.1-8B-Instruct \
     --seq_length 4096 \
     --tp_size 8 \
     --pp_size 1 \

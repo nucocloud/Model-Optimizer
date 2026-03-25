@@ -22,7 +22,6 @@ See `README.md` in this directory for example usage and data preparation instruc
 
 import argparse
 import os
-import traceback
 
 import torch
 from megatron.bridge import AutoBridge
@@ -123,17 +122,15 @@ def get_args():
     # Export arguments
     parser.add_argument(
         "--hf_export_path",
-        "--hf-export-path",
         type=str,
         default=None,
         help=(
             "Path where to save the HuggingFace export. "
-            "If provided, exports checkpoint to HF format after distillation."
+            "If provided, exports last iteration checkpoint to HF format after distillation."
         ),
     )
     parser.add_argument(
         "--hf_model",
-        "--hf-model",
         type=str,
         required=True,
         help="HuggingFace model ID to use as template for export (e.g., meta-llama/Llama-3.1-8B-Instruct). "
@@ -266,32 +263,23 @@ def main(args: argparse.Namespace):
 
     # Export to HuggingFace format if hf_export_path is provided
     if args.hf_export_path:
-        # Wait for all ranks to finish distillation before export
-        if torch.distributed.is_initialized():
-            torch.distributed.barrier()
-
         # Save rank before destroying process group (dist.rank() won't work after destruction)
         is_rank_0 = dist.rank() == 0
 
         # Destroy process group on all ranks - export_ckpt will create its own temporary one
         # This prevents cleanup from hanging (cleanup tries to barrier, but rank 0 would be gone)
-        if torch.distributed.is_initialized():
-            torch.distributed.destroy_process_group()
+        dist.cleanup()
 
         # Only rank 0 exports
         if is_rank_0:
-            try:
-                export_to_hf_and_copy_config(
-                    student_hf_path=args.student_hf_path,
-                    checkpoint_dir=checkpoint_dir,
-                    train_iters=args.train_iters,
-                    hf_export_path=args.hf_export_path,
-                    hf_model=args.hf_model,
-                    trust_remote_code=args.trust_remote_code,
-                )
-            except Exception as e:
-                print(f"⚠️  Export failed: {e}")
-                traceback.print_exc()
+            export_to_hf_and_copy_config(
+                student_hf_path=args.student_hf_path,
+                checkpoint_dir=checkpoint_dir,
+                train_iters=args.train_iters,
+                hf_export_path=args.hf_export_path,
+                hf_model=args.hf_model,
+                trust_remote_code=args.trust_remote_code,
+            )
 
 
 if __name__ == "__main__":
@@ -299,9 +287,5 @@ if __name__ == "__main__":
     args = get_args()
     try:
         main(args)
-    except Exception as e:
-        print_rank_0(f"✗ MAIN FAILED: {type(e).__name__}: {e}")
-        print_rank_0(f"Traceback:\n{traceback.format_exc()}")
-        raise
     finally:
         dist.cleanup()

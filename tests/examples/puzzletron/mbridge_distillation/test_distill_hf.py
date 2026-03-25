@@ -59,7 +59,7 @@ def test_distill_hf(project_root_path: Path, tmp_path: Path):
         cmd_parts,
         student_hf_path=student_hf_path,
         teacher_hf_path=teacher_hf_path,
-        output_dir=str(output_dir),
+        output_dir=output_dir,
         tp_size=tp_size,
         pp_size=1,
         seq_length=128,
@@ -73,7 +73,7 @@ def test_distill_hf(project_root_path: Path, tmp_path: Path):
         eval_interval=100,
         eval_iters=0,
         log_interval=5,
-        hf_export_path=str(hf_export_dir),
+        hf_export_path=hf_export_dir,
         hf_model="Qwen/Qwen3-0.6B",
     )
 
@@ -84,7 +84,7 @@ def test_distill_hf(project_root_path: Path, tmp_path: Path):
     assert run_config_path.exists(), f"Expected run_config.yaml to exist at: {run_config_path}"
 
     # Verify that the distilled model can be loaded in HuggingFace format
-    model = AutoModelForCausalLM.from_pretrained(str(hf_export_dir))
+    model = AutoModelForCausalLM.from_pretrained(hf_export_dir)
     assert model is not None, "Failed to load distilled model with AutoModelForCausalLM"
 
     print(
@@ -139,15 +139,11 @@ def _prepare_student_and_teacher_models(project_root_path: Path, tmp_path: Path)
     teacher_anymodel_dir = tmp_path / "teacher_anymodel"
 
     convert_model(
-        input_dir=str(student_hf_dir),
-        output_dir=str(student_anymodel_dir),
-        converter="qwen3",
+        input_dir=str(student_hf_dir), output_dir=str(student_anymodel_dir), converter="qwen3"
     )
 
     convert_model(
-        input_dir=str(teacher_hf_dir),
-        output_dir=str(teacher_anymodel_dir),
-        converter="qwen3",
+        input_dir=str(teacher_hf_dir), output_dir=str(teacher_anymodel_dir), converter="qwen3"
     )
     print("Models converted to AnyModel format:")
     print(f"  Student AnyModel: {student_anymodel_dir}")
