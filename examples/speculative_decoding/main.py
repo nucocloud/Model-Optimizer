@@ -62,7 +62,7 @@ class ModelArguments:
     model_name_or_path: str | None = field(default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     trust_remote_code: bool = field(
         default=False,
-        metadata={"help": "Set trust_remotecode for Huggingface models and tokenizers"},
+        metadata={"help": "Set trust_remote_code for Huggingface models and tokenizers"},
     )
 
 
